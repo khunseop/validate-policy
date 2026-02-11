@@ -142,7 +142,7 @@ def parse_target_file(file_path: str) -> list:
     대상 정책 파일을 파싱하여 정책 이름 목록을 추출합니다.
     
     - "Rule Name", "Rulename", "Policy Name" 컬럼 모두 지원
-    - "Task Type" 컬럼이 있으면 값이 "Delete"인 행만 추출
+    - "작업구분" (Task Type) 컬럼이 있으면 값이 "삭제" (Delete)인 행만 추출
     - Enable 컬럼은 없음
     
     Args:
@@ -166,8 +166,9 @@ def parse_target_file(file_path: str) -> list:
             max_row = ws.used_range.last_cell.row
             max_col = ws.used_range.last_cell.column
             
-            # 헤더 행 찾기: 정책 이름 컬럼과 Task Type 컬럼 찾기
+            # 헤더 행 찾기: 정책 이름 컬럼과 작업구분 컬럼 찾기
             # 지원하는 컬럼 이름: "Rule Name", "Rulename", "Policy Name"
+            # 작업구분 컬럼: "작업구분", "Task Type", "TaskType", "Task"
             header_row_idx = None
             rulename_col_idx = None
             task_type_col_idx = None
@@ -181,8 +182,8 @@ def parse_target_file(file_path: str) -> list:
                         # 정책 이름 컬럼 찾기
                         if rulename_col_idx is None and cell_str in ['rule name', 'rulename', 'policy name']:
                             rulename_col_idx = col_idx
-                        # Task Type 컬럼 찾기
-                        if task_type_col_idx is None and cell_str in ['task type', 'tasktype', 'task']:
+                        # 작업구분 컬럼 찾기 (한글/영문 모두 지원)
+                        if task_type_col_idx is None and cell_str in ['작업구분', 'task type', 'tasktype', 'task']:
                             task_type_col_idx = col_idx
                 
                 # 정책 이름 컬럼을 찾으면 헤더 행으로 설정
@@ -206,7 +207,7 @@ def parse_target_file(file_path: str) -> list:
             rulename_range = ws.range((data_start_row, rulename_col_idx), (data_end_row, rulename_col_idx))
             rulename_values = rulename_range.value
             
-            # Task Type 컬럼이 있으면 읽기
+            # 작업구분 컬럼이 있으면 읽기
             task_type_values = None
             if task_type_col_idx is not None:
                 task_type_range = ws.range((data_start_row, task_type_col_idx), (data_end_row, task_type_col_idx))
@@ -231,10 +232,12 @@ def parse_target_file(file_path: str) -> list:
         # 정책 이름 추출
         policies = []
         for idx, rulename in enumerate(rulename_values):
-            # Task Type 컬럼이 있고 값이 "Delete"가 아니면 건너뛰기
+            # 작업구분 컬럼이 있고 값이 "삭제" (Delete)가 아니면 건너뛰기
             if task_type_values is not None and idx < len(task_type_values):
-                task_type = str(task_type_values[idx]).strip().lower() if task_type_values[idx] is not None else ''
-                if task_type != 'delete':
+                task_type = str(task_type_values[idx]).strip() if task_type_values[idx] is not None else ''
+                task_type_lower = task_type.lower()
+                # "삭제" 또는 "delete" 모두 지원
+                if task_type_lower not in ['삭제', 'delete']:
                     continue
             
             # 정책 이름이 있으면 추가
@@ -390,29 +393,149 @@ def validate_policy_changes(
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+    
+    print("="*70)
+    print("방화벽 정책 검증 자동화 스크립트")
+    print("="*70 + "\n")
+    
     # 파일 경로 설정
     running_policy_file = "running_policy.xlsx"
     candidate_policy_file = "candidate_policy.xlsx"
+    target_policy_file = "target_policies.xlsx"  # 대상 정책 파일 (작업구분이 "삭제"인 행)
     
+    # 출력 파일 경로
     running_output_file = "running_policy_processed.xlsx"
     candidate_output_file = "candidate_policy_processed.xlsx"
+    validation_report_file = "validation_report.xlsx"
+    
+    # ============================================================
+    # 1. 정책 파일 파싱
+    # ============================================================
+    print("="*70)
+    print("1단계: 정책 파일 파싱")
+    print("="*70)
     
     # Running 정책 파싱
-    print(f"--- Running 정책 파싱: {running_policy_file} ---")
+    print(f"\n[1-1] Running 정책 파싱: {running_policy_file}")
+    if not os.path.exists(running_policy_file):
+        print(f"오류: {running_policy_file} 파일을 찾을 수 없습니다.")
+        sys.exit(1)
+    
     running_policy_data = parse_policy_file(running_policy_file)
-    print(f"총 {len(running_policy_data)}개 정책 발견")
-    print(running_policy_data.head(10))
+    print(f"  ✓ 총 {len(running_policy_data)}개 정책 발견")
     if not running_policy_data.empty:
         running_policy_data.to_excel(running_output_file, index=False)
-        print(f"처리된 running 정책이 {running_output_file}에 저장되었습니다.")
-    print("\n" + "="*50 + "\n")
+        print(f"  ✓ 처리된 데이터가 {running_output_file}에 저장되었습니다.")
+    else:
+        print("  ⚠ 경고: Running 정책 데이터가 비어있습니다.")
     
     # Candidate 정책 파싱
-    print(f"--- Candidate 정책 파싱: {candidate_policy_file} ---")
+    print(f"\n[1-2] Candidate 정책 파싱: {candidate_policy_file}")
+    if not os.path.exists(candidate_policy_file):
+        print(f"오류: {candidate_policy_file} 파일을 찾을 수 없습니다.")
+        sys.exit(1)
+    
     candidate_policy_data = parse_policy_file(candidate_policy_file)
-    print(f"총 {len(candidate_policy_data)}개 정책 발견")
-    print(candidate_policy_data.head(10))
+    print(f"  ✓ 총 {len(candidate_policy_data)}개 정책 발견")
     if not candidate_policy_data.empty:
         candidate_policy_data.to_excel(candidate_output_file, index=False)
-        print(f"처리된 candidate 정책이 {candidate_output_file}에 저장되었습니다.")
-    print("\n" + "="*50 + "\n")
+        print(f"  ✓ 처리된 데이터가 {candidate_output_file}에 저장되었습니다.")
+    else:
+        print("  ⚠ 경고: Candidate 정책 데이터가 비어있습니다.")
+    
+    # ============================================================
+    # 2. 대상 정책 목록 로드
+    # ============================================================
+    print("\n" + "="*70)
+    print("2단계: 대상 정책 목록 로드")
+    print("="*70)
+    
+    print(f"\n[2-1] 대상 정책 파일 파싱: {target_policy_file}")
+    if not os.path.exists(target_policy_file):
+        print(f"  ⚠ 경고: {target_policy_file} 파일을 찾을 수 없습니다.")
+        print("  → 대상 정책 파일이 없으면 검증을 건너뜁니다.")
+        target_policies = []
+    else:
+        target_policies = parse_target_file(target_policy_file)
+        print(f"  ✓ 총 {len(target_policies)}개 대상 정책 발견")
+        if len(target_policies) > 0:
+            print(f"  → 대상 정책 목록 (처음 10개): {', '.join(target_policies[:10])}")
+            if len(target_policies) > 10:
+                print(f"  → ... 외 {len(target_policies) - 10}개")
+    
+    # ============================================================
+    # 3. 정책 검증
+    # ============================================================
+    print("\n" + "="*70)
+    print("3단계: 정책 검증")
+    print("="*70)
+    
+    if len(target_policies) == 0:
+        print("\n  ⚠ 대상 정책이 없어 검증을 건너뜁니다.")
+        print("  → 대상 정책 파일을 준비하고 다시 실행하세요.")
+    elif running_policy_data.empty or candidate_policy_data.empty:
+        print("\n  ⚠ 정책 데이터가 비어있어 검증을 수행할 수 없습니다.")
+    else:
+        print(f"\n[3-1] {len(target_policies)}개 대상 정책 검증 중...")
+        validation_results = validate_policy_changes(
+            running_policy_data,
+            candidate_policy_data,
+            target_policies
+        )
+        
+        # 검증 결과 요약
+        print("\n[3-2] 검증 결과 요약:")
+        status_counts = validation_results['Status'].value_counts()
+        for status, count in status_counts.items():
+            status_kr = {
+                'DELETED': '삭제됨',
+                'DISABLED': '비활성화됨',
+                'RE_ENABLED': '재활성화됨',
+                'NO_CHANGE': '변경 없음',
+                'NOT_IN_RUNNING': 'Running에 없음',
+                'CHANGED': '변경됨'
+            }.get(status, status)
+            print(f"  - {status_kr}: {count}개")
+        
+        # 검증 결과 상세 출력 (처음 20개)
+        print("\n[3-3] 검증 결과 상세 (처음 20개):")
+        print(validation_results.head(20).to_string(index=False))
+        if len(validation_results) > 20:
+            print(f"\n  ... 외 {len(validation_results) - 20}개 결과")
+        
+        # ============================================================
+        # 4. 검증 결과 리포트 저장
+        # ============================================================
+        print("\n" + "="*70)
+        print("4단계: 검증 결과 리포트 저장")
+        print("="*70)
+        
+        validation_results.to_excel(validation_report_file, index=False)
+        print(f"\n  ✓ 검증 결과가 {validation_report_file}에 저장되었습니다.")
+        print(f"  → 총 {len(validation_results)}개 정책 검증 완료")
+        
+        # 삭제/비활성화 확인된 정책 요약
+        deleted_or_disabled = validation_results[
+            validation_results['Status'].isin(['DELETED', 'DISABLED'])
+        ]
+        if len(deleted_or_disabled) > 0:
+            print(f"\n  ✓ 삭제 또는 비활성화 확인된 정책: {len(deleted_or_disabled)}개")
+        else:
+            print("\n  ⚠ 삭제 또는 비활성화 확인된 정책이 없습니다.")
+    
+    # ============================================================
+    # 완료
+    # ============================================================
+    print("\n" + "="*70)
+    print("작업 완료!")
+    print("="*70)
+    print(f"\n생성된 파일:")
+    if os.path.exists(running_output_file):
+        print(f"  - {running_output_file}")
+    if os.path.exists(candidate_output_file):
+        print(f"  - {candidate_output_file}")
+    if os.path.exists(validation_report_file):
+        print(f"  - {validation_report_file}")
+    print()

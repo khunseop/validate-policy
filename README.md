@@ -42,7 +42,13 @@
 └─────────────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. 정책 검증 (향후 구현)                                     │
+│ 3. 대상 정책 목록 로드                                       │
+│    - 대상 정책 파일에서 작업구분이 "삭제"인 정책 추출        │
+│    - "Rule Name", "Rulename", "Policy Name" 컬럼 지원      │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 4. 정책 검증                                                 │
 │    - Running vs Candidate 비교                              │
 │    - 대상 정책이 삭제되었는지 확인                           │
 │    - 대상 정책이 비활성화되었는지 확인                       │
@@ -52,14 +58,23 @@
 
 ## 사용 방법
 
-### 기본 사용 (파싱만)
+### 기본 사용 (전체 워크플로우 실행)
 
 ```bash
 python parse_firewall_policy.py
 ```
 
-이 명령은 `running_policy.xlsx`와 `candidate_policy.xlsx`를 파싱하여 
-처리된 데이터를 Excel 파일로 저장합니다.
+이 명령은 다음 작업을 자동으로 수행합니다:
+1. `running_policy.xlsx`와 `candidate_policy.xlsx` 파싱
+2. `target_policies.xlsx`에서 작업구분이 "삭제"인 정책 추출
+3. 정책 변경 사항 검증
+4. 검증 결과 리포트 생성 (`validation_report.xlsx`)
+
+### 필요한 파일
+
+- `running_policy.xlsx`: 현재 실행 중인 정책 파일 (DRM 보호 가능)
+- `candidate_policy.xlsx`: 변경 예정 정책 파일 (DRM 보호 가능)
+- `target_policies.xlsx`: 대상 정책 파일 (작업구분 컬럼 포함, 선택사항)
 
 ### 프로그래밍 방식 사용
 
@@ -71,27 +86,33 @@ from parse_firewall_policy import (
     validate_policy_changes
 )
 
-# 정책 파일 파싱 (Rulename, Enable 컬럼 추출)
+# 1. 정책 파일 파싱 (Rulename, Enable 컬럼 추출)
 running_df = parse_policy_file("running_policy.xlsx")
 candidate_df = parse_policy_file("candidate_policy.xlsx")
 
-# 대상 정책 파일 파싱 (Task Type이 "Delete"인 행만 추출)
+# 2. 대상 정책 파일 파싱 (작업구분이 "삭제"인 행만 추출)
 # "Rule Name", "Rulename", "Policy Name" 컬럼 모두 지원
 target_policies = parse_target_file("target_policies.xlsx")
 
 # 또는 간단한 텍스트/Excel 파일에서 로드
 # target_policies = load_target_policies("target_policies.txt")
 
-# 정책 변경 사항 검증
+# 3. 정책 변경 사항 검증
 validation_results = validate_policy_changes(
     running_df, 
     candidate_df, 
     target_policies
 )
 
-# 결과 출력 및 저장
+# 4. 결과 출력 및 저장
 print(validation_results)
 validation_results.to_excel("validation_report.xlsx", index=False)
+
+# 검증 결과 요약
+deleted_count = len(validation_results[validation_results['Status'] == 'DELETED'])
+disabled_count = len(validation_results[validation_results['Status'] == 'DISABLED'])
+print(f"\n삭제 확인: {deleted_count}개")
+print(f"비활성화 확인: {disabled_count}개")
 ```
 
 ### 파일 구조
@@ -99,9 +120,12 @@ validation_results.to_excel("validation_report.xlsx", index=False)
 ```
 validate-policy/
 ├── parse_firewall_policy.py      # 메인 스크립트
-├── running_policy.xlsx            # 현재 실행 중인 정책 파일
-├── candidate_policy.xlsx          # 변경 예정 정책 파일
-├── target_policies.txt           # 검증할 정책 이름 목록 (선택사항)
+├── running_policy.xlsx            # 현재 실행 중인 정책 파일 (필수)
+├── candidate_policy.xlsx          # 변경 예정 정책 파일 (필수)
+├── target_policies.xlsx          # 대상 정책 파일 (작업구분 컬럼 포함, 선택사항)
+├── running_policy_processed.xlsx  # 처리된 Running 정책 (자동 생성)
+├── candidate_policy_processed.xlsx # 처리된 Candidate 정책 (자동 생성)
+├── validation_report.xlsx         # 검증 결과 리포트 (자동 생성)
 └── README.md                     # 이 파일
 ```
 
@@ -128,7 +152,7 @@ validate-policy/
 
 **주요 기능:**
 - "Rule Name", "Rulename", "Policy Name" 컬럼 모두 지원 (대소문자 무시)
-- "Task Type" 컬럼이 있으면 값이 "Delete"인 행만 추출
+- "작업구분" (Task Type) 컬럼이 있으면 값이 "삭제" (Delete)인 행만 추출
 - Enable 컬럼은 없음 (정책 이름만 추출)
 - DRM 보호 파일 지원
 
@@ -140,7 +164,7 @@ validate-policy/
 
 **예제:**
 ```python
-# 대상 파일에서 Task Type이 "Delete"인 정책만 추출
+# 대상 파일에서 작업구분이 "삭제"인 정책만 추출
 target_policies = parse_target_file("target_policies.xlsx")
 ```
 
@@ -203,13 +227,26 @@ pip install xlwings pandas openpyxl
 - ✅ pandas DataFrame 연산으로 헤더 탐지
 - ✅ 벌크 처리로 처리 속도 대폭 향상
 
+## 검증 결과 상태
+
+검증 리포트의 `Status` 컬럼은 다음 값을 가질 수 있습니다:
+
+- `DELETED`: 정책이 삭제되었습니다 (Running에는 있지만 Candidate에는 없음)
+- `DISABLED`: 정책이 비활성화되었습니다 (Enabled → Disabled)
+- `RE_ENABLED`: 정책이 다시 활성화되었습니다 (Disabled → Enabled)
+- `NO_CHANGE`: 변경 없음
+- `NOT_IN_RUNNING`: Running 정책에 존재하지 않음
+- `CHANGED`: Enable 상태가 변경됨
+
 ## 향후 개발 계획
 
-- [ ] 정책 비교 기능 구현
-- [ ] 삭제/비활성화 검증 로직 추가
-- [ ] 검증 결과 리포트 생성
+- [x] 정책 비교 기능 구현
+- [x] 삭제/비활성화 검증 로직 추가
+- [x] 검증 결과 리포트 생성
 - [ ] 다중 정책 파일 지원
 - [ ] 로깅 및 에러 핸들링 강화
+- [ ] HTML 리포트 생성
+- [ ] 이메일 알림 기능
 
 ## 문제 해결
 
