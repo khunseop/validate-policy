@@ -508,7 +508,8 @@ def view_report(report_path: Path):
         summary_table.add_column("개수", style="green", justify="right")
         
         for status, count in status_counts.items():
-            status_name = status_kr.get(status, status)
+            status_str = str(status) if pd.notna(status) else 'UNKNOWN'
+            status_name = status_kr.get(status_str, status_str)
             summary_table.add_row(status_name, str(count))
         
         console.print(summary_table)
@@ -532,13 +533,20 @@ def view_report(report_path: Path):
             detail_table.add_column("메시지", style="white")
             
             for _, row in target_results.iterrows():
-                status_name = status_kr.get(row['Status'], row['Status'])
+                # 모든 값을 문자열로 변환 (NaN 처리)
+                status = str(row['Status']) if pd.notna(row['Status']) else 'UNKNOWN'
+                status_name = status_kr.get(status, status)
+                policy = str(row['Policy']) if pd.notna(row['Policy']) else 'N/A'
+                running_enable = str(row['Running_Enable']) if pd.notna(row['Running_Enable']) else 'N/A'
+                candidate_enable = str(row['Candidate_Enable']) if pd.notna(row['Candidate_Enable']) else 'N/A'
+                message = str(row['Message']) if pd.notna(row['Message']) else 'N/A'
+                
                 detail_table.add_row(
-                    row['Policy'],
+                    policy,
                     status_name,
-                    row['Running_Enable'],
-                    row['Candidate_Enable'],
-                    row['Message']
+                    running_enable,
+                    candidate_enable,
+                    message
                 )
             
             console.print(detail_table)
@@ -553,13 +561,20 @@ def view_report(report_path: Path):
             unexpected_table.add_column("메시지", style="white")
             
             for _, row in unexpected_results.iterrows():
-                status_name = status_kr.get(row['Status'], row['Status'])
+                # 모든 값을 문자열로 변환 (NaN 처리)
+                status = str(row['Status']) if pd.notna(row['Status']) else 'UNKNOWN'
+                status_name = status_kr.get(status, status)
+                policy = str(row['Policy']) if pd.notna(row['Policy']) else 'N/A'
+                running_enable = str(row['Running_Enable']) if pd.notna(row['Running_Enable']) else 'N/A'
+                candidate_enable = str(row['Candidate_Enable']) if pd.notna(row['Candidate_Enable']) else 'N/A'
+                message = str(row['Message']) if pd.notna(row['Message']) else 'N/A'
+                
                 unexpected_table.add_row(
-                    row['Policy'],
+                    policy,
                     status_name,
-                    row['Running_Enable'],
-                    row['Candidate_Enable'],
-                    row['Message']
+                    running_enable,
+                    candidate_enable,
+                    message
                 )
             
             console.print(unexpected_table)
