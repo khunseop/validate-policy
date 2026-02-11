@@ -137,6 +137,124 @@ def parse_policy_file(file_path: str) -> pd.DataFrame:
         return pd.DataFrame(columns=['Rulename', 'Enable'])
 
 
+def parse_target_file(file_path: str) -> list:
+    """
+    대상 정책 파일을 파싱하여 정책 이름 목록을 추출합니다.
+    
+    - "Rule Name", "Rulename", "Policy Name" 컬럼 모두 지원
+    - "Task Type" 컬럼이 있으면 값이 "Delete"인 행만 추출
+    - Enable 컬럼은 없음
+    
+    Args:
+        file_path (str): 대상 정책 파일 경로 (Excel 파일, DRM 보호 가능)
+    
+    Returns:
+        list: 정책 이름 리스트
+    """
+    try:
+        # xlwings를 사용하여 DRM 보호 파일 열기
+        with xw.App(visible=False) as app:
+            wb = app.books.open(file_path)
+            ws = wb.sheets[0]
+            
+            # 사용된 범위 가져오기
+            if not ws.used_range:
+                wb.close()
+                return []
+            
+            # 실제 사용된 마지막 행과 열 가져오기
+            max_row = ws.used_range.last_cell.row
+            max_col = ws.used_range.last_cell.column
+            
+            # 헤더 행 찾기: 정책 이름 컬럼과 Task Type 컬럼 찾기
+            # 지원하는 컬럼 이름: "Rule Name", "Rulename", "Policy Name"
+            header_row_idx = None
+            rulename_col_idx = None
+            task_type_col_idx = None
+            
+            search_rows = min(50, max_row)
+            for row_idx in range(1, search_rows + 1):
+                for col_idx in range(1, min(max_col + 1, 200)):
+                    cell_value = ws.range((row_idx, col_idx)).value
+                    if cell_value:
+                        cell_str = str(cell_value).strip().lower()
+                        # 정책 이름 컬럼 찾기
+                        if rulename_col_idx is None and cell_str in ['rule name', 'rulename', 'policy name']:
+                            rulename_col_idx = col_idx
+                        # Task Type 컬럼 찾기
+                        if task_type_col_idx is None and cell_str in ['task type', 'tasktype', 'task']:
+                            task_type_col_idx = col_idx
+                
+                # 정책 이름 컬럼을 찾으면 헤더 행으로 설정
+                if rulename_col_idx is not None:
+                    header_row_idx = row_idx
+                    break
+            
+            if header_row_idx is None or rulename_col_idx is None:
+                wb.close()
+                raise ValueError(f"'{file_path}'에서 정책 이름 컬럼('Rule Name', 'Rulename', 또는 'Policy Name')을 찾을 수 없습니다.")
+            
+            # 헤더 행 이후부터 마지막 행까지 데이터 읽기
+            data_start_row = header_row_idx + 1
+            data_end_row = max_row
+            
+            if data_start_row > data_end_row:
+                wb.close()
+                return []
+            
+            # 정책 이름 컬럼 읽기
+            rulename_range = ws.range((data_start_row, rulename_col_idx), (data_end_row, rulename_col_idx))
+            rulename_values = rulename_range.value
+            
+            # Task Type 컬럼이 있으면 읽기
+            task_type_values = None
+            if task_type_col_idx is not None:
+                task_type_range = ws.range((data_start_row, task_type_col_idx), (data_end_row, task_type_col_idx))
+                task_type_values = task_type_range.value
+            
+            wb.close()
+        
+        # 리스트로 변환 (xlwings 반환값 처리)
+        def normalize_values(values):
+            if values is None:
+                return []
+            elif not isinstance(values, list):
+                return [values]
+            elif len(values) > 0 and isinstance(values[0], list):
+                return [row[0] if row else None for row in values]
+            else:
+                return values
+        
+        rulename_values = normalize_values(rulename_values)
+        task_type_values = normalize_values(task_type_values) if task_type_values is not None else None
+        
+        # 정책 이름 추출
+        policies = []
+        for idx, rulename in enumerate(rulename_values):
+            # Task Type 컬럼이 있고 값이 "Delete"가 아니면 건너뛰기
+            if task_type_values is not None and idx < len(task_type_values):
+                task_type = str(task_type_values[idx]).strip().lower() if task_type_values[idx] is not None else ''
+                if task_type != 'delete':
+                    continue
+            
+            # 정책 이름이 있으면 추가
+            if rulename is not None:
+                rulename_str = str(rulename).strip()
+                if rulename_str:
+                    policies.append(rulename_str)
+        
+        # 중복 제거
+        policies = list(dict.fromkeys(policies))  # 순서 유지하면서 중복 제거
+        
+        return policies
+    
+    except Exception as e:
+        print(f"대상 파일 파싱 오류 ({file_path}): {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
 def load_target_policies(file_path: str) -> list:
     """
     대상 정책 이름 목록을 파일에서 읽어옵니다.

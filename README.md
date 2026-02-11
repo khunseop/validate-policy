@@ -64,14 +64,23 @@ python parse_firewall_policy.py
 ### 프로그래밍 방식 사용
 
 ```python
-from parse_firewall_policy import parse_policy_file, load_target_policies, validate_policy_changes
+from parse_firewall_policy import (
+    parse_policy_file, 
+    parse_target_file, 
+    load_target_policies, 
+    validate_policy_changes
+)
 
-# 정책 파일 파싱
+# 정책 파일 파싱 (Rulename, Enable 컬럼 추출)
 running_df = parse_policy_file("running_policy.xlsx")
 candidate_df = parse_policy_file("candidate_policy.xlsx")
 
-# 대상 정책 목록 로드
-target_policies = load_target_policies("target_policies.txt")
+# 대상 정책 파일 파싱 (Task Type이 "Delete"인 행만 추출)
+# "Rule Name", "Rulename", "Policy Name" 컬럼 모두 지원
+target_policies = parse_target_file("target_policies.xlsx")
+
+# 또는 간단한 텍스트/Excel 파일에서 로드
+# target_policies = load_target_policies("target_policies.txt")
 
 # 정책 변경 사항 검증
 validation_results = validate_policy_changes(
@@ -113,9 +122,31 @@ validate-policy/
 **반환값:**
 - `pd.DataFrame`: 'Rulename'과 'Enable' 컬럼을 가진 DataFrame
 
+### `parse_target_file(file_path: str) -> list`
+
+대상 정책 파일을 파싱하여 정책 이름 목록을 추출합니다.
+
+**주요 기능:**
+- "Rule Name", "Rulename", "Policy Name" 컬럼 모두 지원 (대소문자 무시)
+- "Task Type" 컬럼이 있으면 값이 "Delete"인 행만 추출
+- Enable 컬럼은 없음 (정책 이름만 추출)
+- DRM 보호 파일 지원
+
+**파라미터:**
+- `file_path`: 대상 정책 파일 경로 (Excel 파일, DRM 보호 가능)
+
+**반환값:**
+- `list`: 정책 이름 리스트 (중복 제거됨)
+
+**예제:**
+```python
+# 대상 파일에서 Task Type이 "Delete"인 정책만 추출
+target_policies = parse_target_file("target_policies.xlsx")
+```
+
 ### `load_target_policies(file_path: str) -> list`
 
-대상 정책 이름 목록을 파일에서 읽어옵니다.
+대상 정책 이름 목록을 파일에서 읽어옵니다. (간단한 텍스트/Excel 파일용)
 
 **지원 형식:**
 - 텍스트 파일 (.txt): 한 줄에 하나의 정책 이름
