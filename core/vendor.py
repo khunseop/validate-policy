@@ -138,6 +138,32 @@ class SECUIParser:
             raise ValueError(f"시트 목록 가져오기 오류 ({file_path}): {e}")
     
     @staticmethod
+    def _normalize_id(val) -> Optional[str]:
+        """
+        Excel은 숫자를 float(123.0)으로 반환하므로, 정수면 '123' 문자열로 통일.
+        병합 셀에서 NaN이 나와도 전방 채우기된 값으로 이 함수에 들어옴.
+        """
+        if val is None:
+            return None
+        if isinstance(val, (int, float)):
+            try:
+                if val != int(val):
+                    return None
+                return str(int(val))
+            except (ValueError, OverflowError):
+                return None
+        s = str(val).strip()
+        if not s:
+            return None
+        try:
+            n = float(s)
+            if n != int(n):
+                return None
+            return str(int(n))
+        except ValueError:
+            return s if re.match(r'^\d+$', s) else None
+
+    @staticmethod
     def _diag_row_sample(row, limit: int = 25):
         """진단용: 한 행의 셀 값 샘플을 짧은 문자열로 반환"""
         if row is None:
@@ -182,9 +208,9 @@ class SECUIParser:
                 max_col = min(ws.used_range.last_cell.column, 200)
                 diag.append(f"범위 확인 (max_row={max_row}, max_col={max_col})")
 
-                # 1~2행 무시, 3~8행 헤더, 9행~ 데이터
-                diag.append("헤더 블록 읽기 (3~8행)")
-                header_block = ws.range((3, 1), (min(8, max_row), max_col)).value
+                # 버전별 헤더 높이 대응: 2~10행에서 'ID', 'Enable' 검색. 데이터는 9행~ 고정.
+                diag.append("헤더 블록 읽기 (2~10행)")
+                header_block = ws.range((2, 1), (min(10, max_row), max_col)).value
                 if header_block is None:
                     header_block = []
                 elif header_block and not isinstance(header_block[0], (list, tuple)):
@@ -223,23 +249,23 @@ class SECUIParser:
                         id_col_idx = SECUIParser._find_id_column_from_block(data_sample, max_col)
 
                 if enable_col_idx is None:
-                    row3_sample = SECUIParser._diag_row_sample(
+                    row_sample = SECUIParser._diag_row_sample(
                         header_block[0] if header_block else None
                     )
                     wb.close()
                     raise ValueError(
-                        f"[SECUI 파싱] 헤더(3~8행)에서 'Enable' 컬럼을 찾을 수 없습니다. "
-                        f"3행 셀 샘플: {row3_sample}. "
+                        f"[SECUI 파싱] 헤더(2~10행)에서 'Enable' 컬럼을 찾을 수 없습니다. "
+                        f"첫 행 셀 샘플: {row_sample}. "
                         f"진행: {' > '.join(diag)}"
                     )
                 if id_col_idx is None:
-                    row3_sample = SECUIParser._diag_row_sample(
+                    row_sample = SECUIParser._diag_row_sample(
                         header_block[0] if header_block else None
                     )
                     wb.close()
                     raise ValueError(
-                        f"[SECUI 파싱] 헤더(3~8행)와 데이터 샘플에서 'ID' 컬럼을 찾을 수 없습니다. "
-                        f"3행 셀 샘플: {row3_sample}. "
+                        f"[SECUI 파싱] 헤더(2~10행)와 데이터 샘플에서 'ID' 컬럼을 찾을 수 없습니다. "
+                        f"첫 행 셀 샘플: {row_sample}. "
                         f"진행: {' > '.join(diag)}"
                     )
 
@@ -287,8 +313,9 @@ class SECUIParser:
                     en_val = last_enable
                 else:
                     last_enable = en_val
-                id_str = (id_val if id_val is not None else '').__str__().strip()
-                if re.match(r'^\d+$', id_str):
+                # Excel이 숫자를 float(123.0)으로 주므로 정수 문자열로 정규화 (병합 셀 NaN 후 전방 채우기된 값도 처리)
+                id_str = SECUIParser._normalize_id(id_val)
+                if id_str is not None:
                     id_values.append(id_str)
                     enable_values.append((en_val if en_val is not None else '').__str__().strip())
 
@@ -326,7 +353,7 @@ class SECUIParser:
                 if cell_value is not None:
                     last_val = cell_value
                     total_count += 1
-                    if re.match(r'^\d+$', str(cell_value).strip()):
+                    if SECUIParser._normalize_id(cell_value) is not None:
                         numeric_count += 1
             if total_count >= 5 and numeric_count >= total_count * 0.7:
                 return col_0 + 1
