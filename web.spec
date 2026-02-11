@@ -16,7 +16,7 @@ if (web_dir / 'static').exists():
     datas.append((str(web_dir / 'static'), 'static'))
 
 a = Analysis(
-    scripts=[str(web_dir / 'app.py')],
+    scripts=[str(web_dir / 'launch.py')],
     pathex=[str(project_root)],
     binaries=[],
     datas=datas,
