@@ -141,196 +141,128 @@ class SECUIParser:
     def parse_policy_file(file_path: str, sheet_name: str) -> pd.DataFrame:
         """
         SECUI 방화벽 정책 Excel 파일을 파싱합니다.
-        
-        Args:
-            file_path (str): Excel 파일 경로
-            sheet_name (str): 시트 이름
-        
-        Returns:
-            pd.DataFrame: 'Rulename' (ID)과 'Enable' 컬럼을 가진 DataFrame
+        병합된 셀/대용량 시트 대비해 범위를 한 번에 읽고(값만), 병합 셀은 전방 채우기로 처리합니다.
         """
         try:
             with xw.App(visible=False) as app:
                 wb = app.books.open(file_path)
-                
                 if sheet_name not in [s.name for s in wb.sheets]:
                     wb.close()
                     raise ValueError(f"시트 '{sheet_name}'를 찾을 수 없습니다.")
-                
                 ws = wb.sheets[sheet_name]
-                
                 if not ws.used_range:
                     wb.close()
                     return pd.DataFrame(columns=['Rulename', 'Enable'])
-                
                 max_row = ws.used_range.last_cell.row
-                max_col = ws.used_range.last_cell.column
-                
-                # SECUI 포맷: 1-2행 제거, 3-8행에 컬럼명 (병합 셀), 9행부터 데이터
-                # 헤더 행 찾기 (3-8행에서 컬럼명 찾기)
+                max_col = min(ws.used_range.last_cell.column, 200)
+
+                # 헤더 블록 한 번에 읽기 (3~8행) → 셀 단위 반복 제거
+                header_block = ws.range((3, 1), (min(8, max_row), max_col)).value
+                if header_block is None:
+                    header_block = []
+                elif header_block and not isinstance(header_block[0], (list, tuple)):
+                    header_block = [header_block]
                 id_col_idx = None
                 enable_col_idx = None
-                
-                # 3-8행에서 컬럼명 찾기 (병합 셀 고려)
-                for row_idx in range(3, min(9, max_row + 1)):
-                    for col_idx in range(1, min(max_col + 1, 200)):
-                        cell_value = ws.range((row_idx, col_idx)).value
-                        if cell_value:
-                            cell_str = str(cell_value).strip().lower()
-                            # ID 컬럼 찾기
-                            if id_col_idx is None and cell_str == 'id':
-                                id_col_idx = col_idx
-                            # Enable 컬럼 찾기
-                            if enable_col_idx is None and cell_str == 'enable':
-                                enable_col_idx = col_idx
-                    
-                    # 두 컬럼을 모두 찾으면 종료
-                    if id_col_idx is not None and enable_col_idx is not None:
+                for row in header_block:
+                    for c, cell in enumerate(row or [], 1):
+                        if c > max_col:
+                            break
+                        if cell is None:
+                            continue
+                        s = str(cell).strip().lower()
+                        if id_col_idx is None and s == 'id':
+                            id_col_idx = c
+                        if enable_col_idx is None and s == 'enable':
+                            enable_col_idx = c
+                    if id_col_idx and enable_col_idx:
                         break
-                
-                # ID 컬럼이 없으면 데이터 행에서 숫자만 있는 컬럼 찾기
-                if id_col_idx is None:
-                    id_col_idx = SECUIParser._find_id_column(ws, 8, max_row, max_col)
-                
+
+                if id_col_idx is None and max_row >= 9:
+                    data_sample = ws.range((9, 1), (min(28, max_row), max_col)).value
+                    if data_sample is not None:
+                        id_col_idx = SECUIParser._find_id_column_from_block(data_sample, max_col)
                 if enable_col_idx is None:
                     wb.close()
                     raise ValueError(f"'{file_path}' 시트 '{sheet_name}'에서 'Enable' 컬럼을 찾을 수 없습니다.")
-                
                 if id_col_idx is None:
                     wb.close()
                     raise ValueError(f"'{file_path}' 시트 '{sheet_name}'에서 ID 컬럼을 찾을 수 없습니다.")
-                
-                # 데이터 읽기 (9행부터 시작)
+
                 data_start_row = 9
-                data_end_row = max_row
-                
-                if data_start_row <= data_end_row:
-                    # ID 컬럼 읽기 (병합 셀 처리)
-                    id_values = []
-                    enable_values = []
-                    
-                    # 병합 셀 처리를 위해 마지막 ID 값 저장
-                    last_id_value = None
-                    
-                    for row_idx in range(data_start_row, data_end_row + 1):
-                        # ID 값 읽기 (병합 셀의 경우 상위 셀 값 사용)
-                        id_cell = ws.range((row_idx, id_col_idx))
-                        id_value = id_cell.value
-                        
-                        # 병합 셀 처리: 값이 None이면 위쪽 셀 값 사용
-                        if id_value is None:
-                            # 위쪽 행들을 확인하여 값 찾기 (최대 20행까지 확인, 8행까지는 헤더이므로 9행부터)
-                            for check_row in range(row_idx - 1, max(data_start_row - 1, row_idx - 20), -1):
-                                check_cell = ws.range((check_row, id_col_idx))
-                                check_value = check_cell.value
-                                if check_value is not None:
-                                    check_str = str(check_value).strip()
-                                    # 숫자로만 이루어진 값만 사용
-                                    if re.match(r'^\d+$', check_str):
-                                        id_value = check_value
-                                        break
-                            
-                            # 위에서도 못 찾으면 마지막 ID 값 사용
-                            if id_value is None and last_id_value is not None:
-                                id_value = last_id_value
-                        
-                        # Enable 값 읽기
-                        enable_cell = ws.range((row_idx, enable_col_idx))
-                        enable_value = enable_cell.value
-                        
-                        # 병합 셀 처리: Enable 값이 None이면 위쪽 셀 값 확인
-                        if enable_value is None:
-                            for check_row in range(row_idx - 1, max(data_start_row - 1, row_idx - 20), -1):
-                                check_cell = ws.range((check_row, enable_col_idx))
-                                check_value = check_cell.value
-                                if check_value is not None:
-                                    enable_value = check_value
-                                    break
-                        
-                        # ID가 숫자로만 이루어져 있는지 확인
-                        if id_value is not None:
-                            id_str = str(id_value).strip()
-                            # 숫자로만 이루어져 있는지 확인
-                            if re.match(r'^\d+$', id_str):
-                                id_values.append(id_str)
-                                enable_values.append(enable_value if enable_value is not None else '')
-                                last_id_value = id_str  # 마지막 ID 값 저장
-                            else:
-                                # 숫자가 아니면 건너뛰기 (헤더나 다른 데이터)
-                                continue
-                        else:
-                            # ID가 없으면 건너뛰기
-                            continue
-                else:
-                    id_values = []
-                    enable_values = []
-                
+                if data_start_row > max_row:
+                    wb.close()
+                    return pd.DataFrame(columns=['Rulename', 'Enable'])
+
+                # 데이터 전체를 한 번에 읽기 (값만 읽어서 병합/수식 부담 감소)
+                data_block = ws.range((data_start_row, 1), (max_row, max_col)).value
                 wb.close()
-            
-            # DataFrame 생성
-            df = pd.DataFrame({
-                'Rulename': id_values,  # SECUI는 ID를 Rulename으로 사용
-                'Enable': enable_values
-            })
-            
+            except Exception as e:
+                raise ValueError(f"파일 파싱 오류 ({file_path}, 시트: {sheet_name}): {e}")
+
+            # 블록이 단일 행이면 2차원으로
+            if data_block is None:
+                data_block = []
+            elif not isinstance(data_block[0], (list, tuple)):
+                data_block = [data_block]
+            id_col_0 = id_col_idx - 1
+            enable_col_0 = enable_col_idx - 1
+            id_values = []
+            enable_values = []
+            last_id = None
+            last_enable = None
+            for row in data_block:
+                row = row if isinstance(row, (list, tuple)) else [row]
+                if id_col_0 >= len(row):
+                    id_val = None
+                else:
+                    id_val = row[id_col_0]
+                if enable_col_0 >= len(row):
+                    en_val = None
+                else:
+                    en_val = row[enable_col_0]
+                if id_val is None:
+                    id_val = last_id
+                else:
+                    last_id = id_val
+                if en_val is None:
+                    en_val = last_enable
+                else:
+                    last_enable = en_val
+                id_str = (id_val if id_val is not None else '').__str__().strip()
+                if re.match(r'^\d+$', id_str):
+                    id_values.append(id_str)
+                    enable_values.append((en_val if en_val is not None else '').__str__().strip())
+
+            df = pd.DataFrame({'Rulename': id_values, 'Enable': enable_values})
             df['Rulename'] = df['Rulename'].fillna('').astype(str).str.strip()
             df['Enable'] = df['Enable'].fillna('').astype(str).str.strip()
-            
             df = df[~((df['Rulename'] == '') & (df['Enable'] == ''))]
             df = df.drop_duplicates().reset_index(drop=True)
-            
             return df
-        
-        except Exception as e:
-            raise ValueError(f"파일 파싱 오류 ({file_path}, 시트: {sheet_name}): {e}")
     
     @staticmethod
-    def _find_id_column(ws, start_row: int, max_row: int, max_col: int) -> Optional[int]:
-        """
-        데이터 행에서 숫자로만 이루어진 값이 있는 컬럼을 찾습니다.
-        
-        Args:
-            ws: 워크시트 객체
-            start_row: 시작 행 인덱스 (데이터 시작 행)
-            max_row: 최대 행
-            max_col: 최대 열
-        
-        Returns:
-            Optional[int]: ID 컬럼 인덱스 (없으면 None)
-        """
-        # 시작 행부터 20행 정도를 확인하여 숫자만 있는 컬럼 찾기
-        check_rows = min(20, max_row - start_row + 1)
-        
-        for col_idx in range(1, min(max_col + 1, 200)):
+    def _find_id_column_from_block(data_block, max_col: int) -> Optional[int]:
+        """데이터 블록(2D 리스트)에서 숫자만 있는 컬럼을 ID 컬럼으로 찾습니다. 반환은 1-based 컬럼 인덱스."""
+        if not data_block:
+            return None
+        if not isinstance(data_block[0], (list, tuple)):
+            data_block = [data_block]
+        check_rows = data_block[:20]
+        for col_0 in range(min(max_col, 200)):
             numeric_count = 0
             total_count = 0
-            
-            for row_offset in range(check_rows):
-                row_idx = start_row + row_offset
-                if row_idx > max_row:
-                    break
-                    
-                cell_value = ws.range((row_idx, col_idx)).value
-                
-                # 병합 셀 처리: 값이 None이면 위쪽 셀 값 확인
-                if cell_value is None:
-                    # 위쪽 행들을 확인하여 값 찾기 (최대 10행까지)
-                    for check_row in range(row_idx - 1, max(start_row - 1, row_idx - 10), -1):
-                        check_cell = ws.range((check_row, col_idx))
-                        check_value = check_cell.value
-                        if check_value is not None:
-                            cell_value = check_value
-                            break
-                
+            last_val = None
+            for row in check_rows:
+                row = row if isinstance(row, (list, tuple)) else [row]
+                if col_0 >= len(row):
+                    continue
+                cell_value = row[col_0] if row[col_0] is not None else last_val
                 if cell_value is not None:
+                    last_val = cell_value
                     total_count += 1
-                    cell_str = str(cell_value).strip()
-                    # 숫자로만 이루어져 있는지 확인
-                    if re.match(r'^\d+$', cell_str):
+                    if re.match(r'^\d+$', str(cell_value).strip()):
                         numeric_count += 1
-            
-            # 충분한 데이터가 있고 대부분의 값이 숫자면 ID 컬럼으로 판단
-            if total_count >= 5 and numeric_count >= total_count * 0.7:  # 최소 5개, 70% 이상이 숫자면
-                return col_idx
-        
+            if total_count >= 5 and numeric_count >= total_count * 0.7:
+                return col_0 + 1
         return None

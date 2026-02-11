@@ -114,38 +114,74 @@ def select_vendor() -> str:
         return "Paloalto"
 
 
-def select_sheet(file_path: str, file_type: str) -> str:
-    """SECUI 파일의 시트 선택"""
+def select_secui_sheets(file_path: str) -> tuple:
+    """
+    SECUI 파일에서 시트 목록을 한 번만 불러와, 작업 전/후 시트를 각각 선택받습니다.
+    Returns:
+        (running_sheet_name, candidate_sheet_name)
+    """
     from rich.table import Table
-    
+
     try:
         sheets = SECUIParser.get_sheets(file_path)
-        
         if not sheets:
             raise ValueError("시트를 찾을 수 없습니다.")
-        
-        table = Table(title=f"{file_type} 시트 선택", show_header=True, header_style="bold magenta")
+
+        table = Table(
+            title="SECUI 정책 파일 시트 목록",
+            show_header=True,
+            header_style="bold magenta",
+        )
         table.add_column("번호", style="cyan", width=6)
         table.add_column("시트명", style="green")
-        
-        for idx, sheet_name in enumerate(sheets, 1):
-            table.add_row(str(idx), sheet_name)
-        
+        for idx, name in enumerate(sheets, 1):
+            table.add_row(str(idx), name)
         console.print(table)
-        console.print(f"\n[bold cyan]{file_type} 시트를 선택하세요[/bold cyan]")
-        selection = Prompt.ask("선택 (번호)", default="1")
-        
-        try:
-            idx = int(selection.strip()) - 1
-            if 0 <= idx < len(sheets):
-                return sheets[idx]
-            else:
-                raise ValueError("잘못된 선택입니다.")
-        except ValueError:
+
+        def ask_sheet(prompt: str, default: str = "1") -> str:
+            sel = Prompt.ask(prompt, default=default)
+            try:
+                idx = int(sel.strip()) - 1
+                if 0 <= idx < len(sheets):
+                    return sheets[idx]
+            except ValueError:
+                pass
             raise ValueError("잘못된 선택입니다.")
+
+        console.print("\n[bold cyan]작업 전(Running) 시트를 선택하세요[/bold cyan]")
+        running_sheet = ask_sheet("작업 전 시트 (번호)", "1")
+        console.print(f"[green]선택됨: {running_sheet}[/green]")
+
+        console.print("\n[bold cyan]작업 후(Candidate) 시트를 선택하세요[/bold cyan]")
+        candidate_sheet = ask_sheet("작업 후 시트 (번호)", "2" if len(sheets) > 1 else "1")
+        console.print(f"[green]선택됨: {candidate_sheet}[/green]")
+
+        return running_sheet, candidate_sheet
     except Exception as e:
         console.print(f"[red]시트 선택 오류: {e}[/red]")
         raise
+
+
+def get_sheet_choice(file_path: str, prompt_label: str) -> str:
+    """파일에서 시트 목록을 한 번 불러와 하나 선택받습니다."""
+    from rich.table import Table
+    sheets = SECUIParser.get_sheets(file_path)
+    if not sheets:
+        raise ValueError("시트를 찾을 수 없습니다.")
+    table = Table(title=f"{prompt_label} 시트 선택", show_header=True, header_style="bold magenta")
+    table.add_column("번호", style="cyan", width=6)
+    table.add_column("시트명", style="green")
+    for idx, name in enumerate(sheets, 1):
+        table.add_row(str(idx), name)
+    console.print(table)
+    sel = Prompt.ask(f"{prompt_label} 시트 (번호)", default="1")
+    try:
+        idx = int(sel.strip()) - 1
+        if 0 <= idx < len(sheets):
+            return sheets[idx]
+    except ValueError:
+        pass
+    raise ValueError("잘못된 선택입니다.")
 
 
 def main():
@@ -173,21 +209,33 @@ def main():
     running_file = running_files[0]
     console.print(f"[green]선택됨: {running_file}[/green]")
     
-    # SECUI의 경우 시트 선택
     running_sheet = None
     candidate_sheet = None
     if vendor == "SECUI":
         running_file_path = str(current_dir / running_file)
-        console.print("\n[bold]1-1단계: Running 정책 시트 선택 (작업 전)[/bold]")
-        running_sheet = select_sheet(running_file_path, "Running (작업 전)")
-        console.print(f"[green]선택됨: {running_sheet}[/green]")
-        
-        console.print("\n[bold]1-2단계: Candidate 정책 시트 선택 (작업 후)[/bold]")
-        candidate_sheet = select_sheet(running_file_path, "Candidate (작업 후)")
-        console.print(f"[green]선택됨: {candidate_sheet}[/green]")
-        
-        # SECUI는 같은 파일 사용
-        candidate_file = running_file
+        use_same_file = Confirm.ask(
+            "같은 정책 파일 사용? (Running·Candidate 동일 파일, 작업 전/후 시트만 구분)",
+            default=True,
+        )
+        if use_same_file:
+            console.print("\n[bold]1단계: SECUI 정책 시트 선택 (작업 전/후)[/bold]")
+            running_sheet, candidate_sheet = select_secui_sheets(running_file_path)
+            candidate_file = running_file
+        else:
+            console.print("\n[bold]2단계: Candidate 정책 파일 선택[/bold]")
+            candidate_files = select_excel_files(current_dir, "Candidate 정책")
+            if not candidate_files:
+                console.print("[red]Candidate 정책 파일이 선택되지 않았습니다.[/red]")
+                sys.exit(1)
+            candidate_file = candidate_files[0]
+            console.print(f"[green]선택됨: {candidate_file}[/green]")
+            candidate_file_path = str(current_dir / candidate_file)
+            console.print("\n[bold]Running 시트 선택[/bold]")
+            running_sheet = get_sheet_choice(running_file_path, "Running")
+            console.print(f"[green]선택됨: {running_sheet}[/green]")
+            console.print("\n[bold]Candidate 시트 선택[/bold]")
+            candidate_sheet = get_sheet_choice(candidate_file_path, "Candidate")
+            console.print(f"[green]선택됨: {candidate_sheet}[/green]")
     else:
         # 2. Candidate 정책 파일 선택 (Paloalto)
         console.print("\n[bold]2단계: Candidate 정책 파일 선택[/bold]")

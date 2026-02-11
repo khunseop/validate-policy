@@ -102,30 +102,33 @@ def upload_files():
         
         # 파일 확인
         if vendor == 'SECUI':
-            # SECUI는 running_file만 필요 (같은 파일의 다른 시트 사용)
             if 'running_file' not in request.files:
                 return jsonify({'error': 'Running 정책 파일은 필수입니다.'}), 400
-            
             running_file = request.files['running_file']
             running_sheet = request.form.get('running_sheet')
             candidate_sheet = request.form.get('candidate_sheet')
-            
+            candidate_file = request.files.get('candidate_file')
+            use_same_file = not candidate_file or not (getattr(candidate_file, 'filename', None) or '').strip()
+
             if running_file.filename == '':
-                return jsonify({'error': '파일을 선택해주세요.'}), 400
-            
+                return jsonify({'error': 'Running 정책 파일을 선택해주세요.'}), 400
             if not running_sheet or not candidate_sheet:
                 return jsonify({'error': '작업 전/후 시트를 선택해주세요.'}), 400
-            
             if not allowed_file(running_file.filename):
                 return jsonify({'error': 'Excel 파일만 업로드 가능합니다 (.xlsx, .xls)'}), 400
-            
-            # 파일 저장
+
             upload_dir = get_upload_dir()
             upload_dir.mkdir(parents=True, exist_ok=True)
-            
             running_path = upload_dir / secure_filename(running_file.filename)
             running_file.save(str(running_path))
-            candidate_path = running_path  # 같은 파일 사용
+
+            if use_same_file:
+                candidate_path = running_path
+            else:
+                if not allowed_file(candidate_file.filename):
+                    return jsonify({'error': 'Candidate 파일은 Excel(.xlsx, .xls)만 가능합니다.'}), 400
+                candidate_path = upload_dir / secure_filename(candidate_file.filename)
+                candidate_file.save(str(candidate_path))
         else:
             # Paloalto는 두 파일 필요
             if 'running_file' not in request.files or 'candidate_file' not in request.files:
