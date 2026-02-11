@@ -197,8 +197,6 @@ class SECUIParser:
                 # 데이터 전체를 한 번에 읽기 (값만 읽어서 병합/수식 부담 감소)
                 data_block = ws.range((data_start_row, 1), (max_row, max_col)).value
                 wb.close()
-            except Exception as e:
-                raise ValueError(f"파일 파싱 오류 ({file_path}, 시트: {sheet_name}): {e}")
 
             # 블록이 단일 행이면 2차원으로
             if data_block is None:
@@ -240,6 +238,8 @@ class SECUIParser:
             df = df[~((df['Rulename'] == '') & (df['Enable'] == ''))]
             df = df.drop_duplicates().reset_index(drop=True)
             return df
+        except Exception as e:
+            raise ValueError(f"파일 파싱 오류 ({file_path}, 시트: {sheet_name}): {e}")
     
     @staticmethod
     def _find_id_column_from_block(data_block, max_col: int) -> Optional[int]:
