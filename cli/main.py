@@ -190,7 +190,7 @@ def main():
     
     console.print(Panel.fit(
         "[bold cyan]방화벽 정책 검증 자동화 스크립트[/bold cyan]\n"
-        "DRM 보호 파일을 처리하고 정책 변경 사항을 검증합니다.",
+        "정책 변경 사항을 검증합니다.",
         border_style="cyan"
     ))
     
@@ -341,9 +341,8 @@ def main():
             console.print("[bold]8단계: 검증 결과 리포트 저장[/bold]")
             console.print("="*70)
             
-            # 날짜 형식: YYYY-MM-DD
-            today = datetime.now().strftime("%Y-%m-%d")
-            validation_report_file = current_dir / f"{today}_validation_report.xlsx"
+            # 날짜+시간으로 파일명 중복 방지
+            validation_report_file = current_dir / (datetime.now().strftime("%Y-%m-%d_%H%M%S") + "_validation_report.xlsx")
             validation_results.to_excel(str(validation_report_file), index=False, engine='openpyxl')
             console.print(f"\n[green]✓ 검증 결과가 {validation_report_file.name}에 저장되었습니다.[/green]")
             console.print(f"[green]✓ 총 {len(validation_results)}개 정책 검증 완료[/green]")

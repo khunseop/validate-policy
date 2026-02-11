@@ -3,56 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>방화벽 정책 검증 시스템</title>
+    <title>방화벽 정책 검증</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
+        body { background: #fafafa; font-size: 0.9375rem; }
+        .card { border: 1px solid #eee; border-radius: 8px; }
+        .card-header { background: #fff; border-bottom: 1px solid #eee; font-weight: 600; padding: 0.75rem 1rem; }
         .upload-area {
-            border: 2px dashed #dee2e6;
+            border: 1px dashed #ddd;
             border-radius: 6px;
-            padding: 0.75rem 1rem;
-            text-align: center;
-            transition: all 0.2s;
+            padding: 0.5rem 0.75rem;
+            background: #fff;
         }
-        .upload-area:hover {
-            border-color: #0d6efd;
-            background-color: #f8f9fa;
-        }
-        .upload-area.dragover {
-            border-color: #0d6efd;
-            background-color: #e7f1ff;
-        }
-        .file-list { margin-top: 0.5rem; }
-        .file-item {
-            padding: 0.35rem 0.5rem;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            margin-bottom: 0.25rem;
-            font-size: 0.9rem;
-        }
+        .upload-area:hover, .upload-area.dragover { border-color: #999; background: #f9f9f9; }
         .loading { display: none; }
         .loading.show { display: block; }
-        .card-body .alert ul { font-size: 0.9rem; }
+        .btn { font-size: 0.875rem; }
     </style>
 </head>
 <body>
-    <div class="container py-3">
+    <div class="container py-4">
         <div class="row justify-content-center">
-            <div class="col-lg-9">
-                <div class="card shadow">
-                    <div class="card-header py-2 bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-shield-check"></i> 방화벽 정책 검증</h5>
-                    </div>
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">방화벽 정책 검증</div>
                     <div class="card-body py-3">
-                        <div class="alert alert-info py-2 mb-3 small">
-                            <i class="bi bi-info-circle"></i> DRM 파일은 서버에 Excel 필요 · Running/Candidate 필수 · 대상 정책은 작업구분 "삭제"만 추출
-                        </div>
+                        <p class="text-muted small mb-3">Running/Candidate 정책 필수 · 대상 정책은 작업구분 "삭제"만 추출</p>
 
                         <form id="uploadForm" enctype="multipart/form-data">
                             <input type="file" class="d-none" id="runningFile" name="running_file" accept=".xlsx,.xls" required>
                             <div class="row align-items-end mb-2">
                                 <div class="col-md-4">
-                                    <label class="form-label fw-bold small mb-1"><i class="bi bi-building"></i> 벤더 <span class="text-danger">*</span></label>
+                                    <label class="form-label small mb-1">벤더 <span class="text-danger">*</span></label>
                                     <select class="form-select form-select-sm" id="vendorSelect" name="vendor" required>
                                         <option value="Paloalto" selected>Paloalto</option>
                                         <option value="SECUI">SECUI (작업 전/후 시트)</option>
@@ -68,7 +50,7 @@
                                 </div>
                                 <div class="row g-2 mb-2 align-items-end">
                                     <div class="col">
-                                        <label class="form-label fw-bold small mb-1"><i class="bi bi-file-earmark-spreadsheet"></i> Running 정책 파일 <span class="text-danger">*</span></label>
+                                        <label class="form-label small mb-1">Running 정책 파일 <span class="text-danger">*</span></label>
                                         <div class="d-flex gap-2 align-items-center flex-wrap">
                                             <div class="upload-area py-2 flex-grow-1 d-flex align-items-center gap-2" id="runningArea">
                                                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('runningFile').click()">파일 선택</button>
@@ -94,7 +76,7 @@
                                 </div>
                                 <div class="row g-2 mb-2" id="secuiCandidateFileWrap" style="display: none;">
                                     <div class="col">
-                                        <label class="form-label fw-bold small mb-1"><i class="bi bi-file-earmark-spreadsheet"></i> Candidate 정책 파일 (별도 파일일 때)</label>
+                                        <label class="form-label small mb-1">Candidate 정책 파일 (별도 파일일 때)</label>
                                         <div class="d-flex gap-2 align-items-center flex-wrap">
                                             <div class="upload-area py-2 flex-grow-1 d-flex align-items-center gap-2" id="secuiCandidateArea">
                                                 <input type="file" class="d-none" id="secuiCandidateFile" name="candidate_file" accept=".xlsx,.xls">
@@ -110,14 +92,14 @@
                             <!-- Paloalto: Running / Candidate 별도 (같은 runningFile input 사용) -->
                             <div id="paloaltoFileArea" style="display: none;">
                                 <div class="mb-2">
-                                    <label class="form-label fw-bold small mb-1"><i class="bi bi-file-earmark-spreadsheet"></i> Running 정책 파일 <span class="text-danger">*</span></label>
+                                    <label class="form-label small mb-1">Running 정책 파일 <span class="text-danger">*</span></label>
                                     <div class="upload-area py-2 d-flex align-items-center gap-2" id="runningAreaPa">
                                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('runningFile').click()">파일 선택</button>
                                         <span class="text-muted small" id="runningFileNamePa"></span>
                                     </div>
                                 </div>
                                 <div class="mb-2">
-                                    <label class="form-label fw-bold small mb-1"><i class="bi bi-file-earmark-spreadsheet"></i> Candidate 정책 파일 <span class="text-danger">*</span></label>
+                                    <label class="form-label small mb-1">Candidate 정책 파일 <span class="text-danger">*</span></label>
                                     <div class="upload-area py-2 d-flex align-items-center gap-2" id="candidateArea">
                                         <input type="file" class="d-none" id="candidateFile" name="candidate_file" accept=".xlsx,.xls">
                                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('candidateFile').click()">파일 선택</button>
@@ -127,7 +109,7 @@
                             </div>
 
                             <div class="mb-2">
-                                <label class="form-label fw-bold small mb-1"><i class="bi bi-file-earmark-spreadsheet"></i> 대상 정책 (선택, 여러 개 가능)</label>
+                                <label class="form-label small mb-1">대상 정책 (선택, 여러 개 가능)</label>
                                 <div class="upload-area py-2 d-flex align-items-center gap-2" id="targetArea">
                                     <input type="file" class="d-none" id="targetFiles" name="target_files" accept=".xlsx,.xls" multiple>
                                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('targetFiles').click()">파일 선택</button>
@@ -135,8 +117,9 @@
                                 </div>
                             </div>
 
-                            <div class="d-grid gap-2 mt-3">
-                                <button type="submit" class="btn btn-primary" id="submitBtn"><i class="bi bi-play-circle"></i> 검증 시작</button>
+                            <div class="d-flex gap-2 mt-3 flex-wrap">
+                                <button type="submit" class="btn btn-primary" id="submitBtn">검증 시작</button>
+                                <button type="button" class="btn btn-outline-secondary" id="btnReset">초기화</button>
                             </div>
                         </form>
 
@@ -147,49 +130,14 @@
                             </div>
                         </div>
 
-                        <!-- 결과 영역 (AJAX 성공 시 또는 /results 접속 시) -->
                         <div id="resultArea" class="mt-4">{% if summary_only and report_filename %}
-                            <div class="alert alert-success">
-                                <h4><i class="bi bi-check-circle"></i> 검증 완료!</h4>
-                                <p class="mb-0">총 {{ summary_only.total }}개 정책이 검증되었습니다.</p>
+                            <p class="text-success mb-2">검증 완료 · 총 {{ summary_only.total }}개 정책</p>
+                            <div class="small text-muted mb-2">
+                                대상: 삭제 {{ summary_only.deleted }}, 비활성화 {{ summary_only.disabled }}{% if summary_only.not_disabled > 0 %}, 비활성화 안됨 {{ summary_only.not_disabled }}{% endif %}
+                                · 대상 외: 삭제 {{ summary_only.unexpected_deleted }}, 비활성화 {{ summary_only.unexpected_disabled }}
                             </div>
-                            <div class="card mb-3">
-                                <div class="card-header bg-primary text-white">
-                                    <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 검증 결과 요약</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <h6>대상 정책 검증</h6>
-                                            <ul>
-                                                <li>삭제 확인: <span class="badge bg-success">{{ summary_only.deleted }}개</span></li>
-                                                <li>비활성화 확인: <span class="badge bg-success">{{ summary_only.disabled }}개</span>
-                                                {% if summary_only.not_disabled > 0 %}<li>비활성화 안됨: <span class="badge bg-warning">{{ summary_only.not_disabled }}개</span></li>{% endif %}
-                                            </ul>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <h6>대상 외 정책</h6>
-                                            <ul>
-                                                {% if summary_only.unexpected_deleted > 0 %}<li>삭제됨: <span class="badge bg-danger">{{ summary_only.unexpected_deleted }}개</span></li>{% endif %}
-                                                {% if summary_only.unexpected_disabled > 0 %}<li>비활성화됨: <span class="badge bg-danger">{{ summary_only.unexpected_disabled }}개</span></li>{% endif %}
-                                                {% if summary_only.unexpected_deleted == 0 and summary_only.unexpected_disabled == 0 %}<li>없음</li>{% endif %}
-                                            </ul>
-                                        </div>
-                                    </div>
-                                    <hr><h6>상태별 통계</h6>
-                                    <div class="row">
-                                        {% for status, count in summary_only.status_counts.items() %}
-                                        <div class="col-md-4 mb-2">{{ status }}: <span class="badge bg-secondary">{{ count }}개</span></div>
-                                        {% endfor %}
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="d-grid gap-2">
-                                <a href="/download" class="btn btn-success btn-lg">
-                                    <i class="bi bi-download"></i> 리포트 다운로드 ({{ report_filename }})
-                                </a>
-                            </div>
-                        {% elif error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}</div>
+                            <a href="/download" class="btn btn-sm btn-outline-primary">리포트 다운로드 ({{ report_filename }})</a>
+                        {% elif error %}<p class="text-warning mb-0">{{ error }}</p>{% endif %}</div>
                     </div>
                 </div>
             </div>
@@ -335,6 +283,25 @@
             document.getElementById('targetFilesLabel').textContent = len ? len + '개 파일 선택됨' : '';
         });
 
+        // 초기화: 폼·결과 영역 비우기
+        document.getElementById('btnReset').addEventListener('click', function() {
+            document.getElementById('uploadForm').reset();
+            document.getElementById('runningFileName').textContent = '';
+            document.getElementById('runningFileNamePa').textContent = '';
+            document.getElementById('candidateFileName').textContent = '';
+            document.getElementById('secuiCandidateFileName').textContent = '';
+            document.getElementById('targetFilesLabel').textContent = '';
+            document.getElementById('runningSheetSelect').innerHTML = '<option value="">시트 목록 가져오기 버튼을 클릭하세요</option>';
+            document.getElementById('candidateSheetSelect').innerHTML = '<option value="">시트 목록 가져오기 버튼을 클릭하세요</option>';
+            document.getElementById('vendorSelect').value = 'Paloalto';
+            document.getElementById('vendorSelect').dispatchEvent(new Event('change'));
+            document.getElementById('secuiSameFile').checked = true;
+            document.getElementById('secuiCandidateFileWrap').style.display = 'none';
+            document.getElementById('btnLoadSheets').disabled = true;
+            document.getElementById('btnLoadSheetsCandidate').disabled = true;
+            document.getElementById('resultArea').innerHTML = '';
+        });
+
         // 드래그 앤 드롭
         ['runningArea', 'runningAreaPa', 'candidateArea', 'secuiCandidateArea', 'targetArea'].forEach(areaId => {
             const area = document.getElementById(areaId);
@@ -416,85 +383,21 @@
         function showResults(data) {
             const resultArea = document.getElementById('resultArea');
             const summary = data.summary;
-            
-            const statusKr = {
-                'DELETED': '삭제됨 ✓',
-                'DISABLED': '비활성화됨 ✓',
-                'NOT_DISABLED': '비활성화 안됨 ⚠',
-                'UNEXPECTED_DELETED': '대상 외 삭제됨 ⚠',
-                'UNEXPECTED_DISABLED': '대상 외 비활성화됨 ⚠',
-                'RE_ENABLED': '재활성화됨 ⚠',
-                'NO_CHANGE': '변경 없음',
-                'NOT_IN_RUNNING': 'Running에 없음',
-                'CHANGED': '변경됨'
-            };
-            
+            const nd = summary.not_disabled > 0 ? `, 비활성화 안됨 ${summary.not_disabled}` : '';
             let html = `
-                <div class="alert alert-success">
-                    <h4><i class="bi bi-check-circle"></i> 검증 완료!</h4>
-                    <p class="mb-0">총 ${summary.total}개 정책이 검증되었습니다.</p>
+                <p class="text-success mb-2">검증 완료 · 총 ${summary.total}개 정책</p>
+                <div class="small text-muted mb-2">
+                    대상: 삭제 ${summary.deleted}, 비활성화 ${summary.disabled}${nd}
+                    · 대상 외: 삭제 ${summary.unexpected_deleted}, 비활성화 ${summary.unexpected_disabled}
                 </div>
-                
-                <div class="card mb-3">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 검증 결과 요약</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>대상 정책 검증</h6>
-                                <ul>
-                                    <li>삭제 확인: <span class="badge bg-success">${summary.deleted}개</span></li>
-                                    <li>비활성화 확인: <span class="badge bg-success">${summary.disabled}개</span>
-                                    ${summary.not_disabled > 0 ? `<li>비활성화 안됨: <span class="badge bg-warning">${summary.not_disabled}개</span></li>` : ''}
-                                </ul>
-                            </div>
-                            <div class="col-md-6">
-                                <h6>대상 외 정책</h6>
-                                <ul>
-                                    ${summary.unexpected_deleted > 0 ? `<li>삭제됨: <span class="badge bg-danger">${summary.unexpected_deleted}개</span></li>` : ''}
-                                    ${summary.unexpected_disabled > 0 ? `<li>비활성화됨: <span class="badge bg-danger">${summary.unexpected_disabled}개</span></li>` : ''}
-                                    ${summary.unexpected_deleted === 0 && summary.unexpected_disabled === 0 ? '<li>없음</li>' : ''}
-                                </ul>
-                            </div>
-                        </div>
-                        
-                        <hr>
-                        <h6>상태별 통계</h6>
-                        <div class="row">
-            `;
-            
-            for (const [status, count] of Object.entries(summary.status_counts)) {
-                html += `
-                    <div class="col-md-4 mb-2">
-                        ${statusKr[status] || status}: <span class="badge bg-secondary">${count}개</span>
-                    </div>
-                `;
-            }
-            
-            html += `
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="d-grid gap-2">
-                    <a href="/download" class="btn btn-success btn-lg">
-                        <i class="bi bi-download"></i> 리포트 다운로드 (${data.report_filename})
-                    </a>
-                </div>
+                <a href="/download" class="btn btn-sm btn-outline-primary">리포트 다운로드 (${data.report_filename})</a>
             `;
             
             resultArea.innerHTML = html;
         }
 
         function showError(message) {
-            const resultArea = document.getElementById('resultArea');
-            resultArea.innerHTML = `
-                <div class="alert alert-danger">
-                    <h4><i class="bi bi-exclamation-triangle"></i> 오류 발생</h4>
-                    <p>${message}</p>
-                </div>
-            `;
+            document.getElementById('resultArea').innerHTML = `<p class="text-danger mb-0">${message}</p>`;
         }
     </script>
 </body>

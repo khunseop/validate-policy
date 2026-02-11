@@ -2,7 +2,7 @@
 Flask 웹 애플리케이션: 방화벽 정책 검증
 
 로컬 웹 서버에서 실행하여 파일을 업로드하고 정책을 검증합니다.
-DRM 보호 파일 처리를 위해 서버에 Excel이 설치되어 있어야 합니다.
+방화벽 정책 검증 웹 애플리케이션
 """
 
 from flask import Flask, render_template, request, send_file, jsonify, session
@@ -206,7 +206,6 @@ if __name__ == '__main__':
     atexit.register(cleanup_temp_files)
     
     console.print("[bold green]방화벽 정책 검증 웹 애플리케이션 시작[/bold green]")
-    console.print("[yellow]주의: 서버에 Excel이 설치되어 있어야 DRM 파일을 처리할 수 있습니다.[/yellow]")
     console.print("[cyan]로컬 접속: http://127.0.0.1:5000[/cyan]\n")
     
     app.run(host='127.0.0.1', port=5000, debug=True)

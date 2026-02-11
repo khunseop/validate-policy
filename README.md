@@ -25,7 +25,7 @@ validate-policy/
 
 ## 주요 기능
 
-1. **정책 파일 파싱**: DRM이 적용된 Excel 파일에서 정책 정보 추출
+1. **정책 파일 파싱**: Excel 파일에서 정책 정보 추출
    - `Rulename`: 정책 이름
    - `Enable`: 정책 활성화 상태 (Y/N)
 
@@ -90,14 +90,6 @@ python web/app.py
 ### web/app.py
 - Flask 웹 애플리케이션
 - 파일 업로드 및 검증 API
-
-## 중요 제약사항
-
-⚠️ **DRM 파일 처리:**
-- `xlwings`는 서버에 **Excel이 설치되어 있어야** DRM 보호 파일을 처리할 수 있습니다.
-- **Windows/Mac**: 가능 (Excel 설치 필요)
-- **Linux 서버**: 불가능 (Excel이 없음)
-- **로컬 실행**: 권장
 
 ## 검증 결과 상태
 

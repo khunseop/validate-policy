@@ -2,7 +2,6 @@
 정책 파일 파싱 모듈
 
 Excel 파일에서 정책 정보를 추출합니다.
-DRM 보호 파일 처리를 위해 xlwings를 사용합니다.
 """
 
 import xlwings as xw
@@ -18,14 +17,14 @@ def parse_policy_file(file_path: str) -> pd.DataFrame:
     빈 셀이 많은 파일에서도 'Rulename'과 'Enable'을 정확히 추출합니다.
     
     Args:
-        file_path (str): Excel 파일 경로 (DRM 보호 파일 가능)
+        file_path (str): Excel 파일 경로
     
     Returns:
         pd.DataFrame: 'Rulename'과 'Enable' 컬럼을 가진 DataFrame
                      (중복 제거 및 공백 제거 완료)
     """
     try:
-        # xlwings를 사용하여 DRM 보호 파일 열기
+        # xlwings로 Excel 파일 열기
         with xw.App(visible=False) as app:
             wb = app.books.open(file_path)
             ws = wb.sheets[0]
@@ -143,13 +142,13 @@ def parse_target_file(file_path: str) -> List[str]:
     - Enable 컬럼은 없음
     
     Args:
-        file_path (str): 대상 정책 파일 경로 (Excel 파일, DRM 보호 가능)
+        file_path (str): 대상 정책 파일 경로 (Excel 파일)
     
     Returns:
         List[str]: 정책 이름 리스트
     """
     try:
-        # xlwings를 사용하여 DRM 보호 파일 열기
+        # xlwings로 Excel 파일 열기
         with xw.App(visible=False) as app:
             wb = app.books.open(file_path)
             ws = wb.sheets[0]
