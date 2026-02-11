@@ -156,7 +156,8 @@ class SECUIParser:
                 max_row = ws.used_range.last_cell.row
                 max_col = min(ws.used_range.last_cell.column, 200)
 
-                # 헤더 블록 한 번에 읽기 (3~8행) → 셀 단위 반복 제거
+                # 1~2행: 사용 안 함(삭제/무시). 3~8행: 병합된 헤더 영역. 9행~: 데이터.
+                # 컬럼 판단: 3행을 먼저 사용(병합 시 값이 3행에 있을 가능성 높음), 없으면 4~8행 스캔
                 header_block = ws.range((3, 1), (min(8, max_row), max_col)).value
                 if header_block is None:
                     header_block = []
@@ -164,9 +165,12 @@ class SECUIParser:
                     header_block = [header_block]
                 id_col_idx = None
                 enable_col_idx = None
-                for row in header_block:
-                    for c, cell in enumerate(row or [], 1):
-                        if c > max_col:
+
+                def scan_row_for_headers(row, max_c: int) -> None:
+                    nonlocal id_col_idx, enable_col_idx
+                    row = row if isinstance(row, (list, tuple)) else (row,) if row is not None else ()
+                    for c, cell in enumerate(row, 1):
+                        if c > max_c:
                             break
                         if cell is None:
                             continue
@@ -175,8 +179,14 @@ class SECUIParser:
                             id_col_idx = c
                         if enable_col_idx is None and s == 'enable':
                             enable_col_idx = c
-                    if id_col_idx and enable_col_idx:
+
+                # 3행으로 먼저 컬럼 판단
+                if header_block:
+                    scan_row_for_headers(header_block[0], max_col)
+                for row in (header_block[1:] if len(header_block) > 1 else []):
+                    if id_col_idx is not None and enable_col_idx is not None:
                         break
+                    scan_row_for_headers(row, max_col)
 
                 if id_col_idx is None and max_row >= 9:
                     data_sample = ws.range((9, 1), (min(28, max_row), max_col)).value
