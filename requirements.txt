@@ -2,3 +2,5 @@ xlwings>=0.30.0
 pandas>=1.5.0
 openpyxl>=3.0.0
 rich>=13.0.0
+flask>=2.3.0
+werkzeug>=2.3.0

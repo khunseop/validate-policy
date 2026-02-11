@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>방화벽 정책 검증 시스템</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #0d6efd;
+            background-color: #f8f9fa;
+        }
+        .upload-area.dragover {
+            border-color: #0d6efd;
+            background-color: #e7f1ff;
+        }
+        .file-list {
+            margin-top: 1rem;
+        }
+        .file-item {
+            padding: 0.5rem;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+        .loading {
+            display: none;
+        }
+        .loading.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h2 class="mb-0"><i class="bi bi-shield-check"></i> 방화벽 정책 검증 시스템</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> <strong>주의사항:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>DRM 보호 파일 처리를 위해 서버에 Excel이 설치되어 있어야 합니다.</li>
+                                <li>Running 정책 파일과 Candidate 정책 파일은 필수입니다.</li>
+                                <li>대상 정책 파일은 여러 개 선택 가능합니다 (작업구분이 "삭제"인 정책만 추출).</li>
+                            </ul>
+                        </div>
+
+                        <form id="uploadForm" enctype="multipart/form-data">
+                            <!-- Running 정책 파일 -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-file-earmark-spreadsheet"></i> Running 정책 파일 <span class="text-danger">*</span>
+                                </label>
+                                <div class="upload-area" id="runningArea">
+                                    <i class="bi bi-cloud-upload fs-1 text-muted"></i>
+                                    <p class="mt-2">파일을 드래그하거나 클릭하여 선택</p>
+                                    <input type="file" class="form-control d-none" id="runningFile" name="running_file" accept=".xlsx,.xls" required>
+                                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('runningFile').click()">
+                                        파일 선택
+                                    </button>
+                                </div>
+                                <div class="file-list" id="runningFileList"></div>
+                            </div>
+
+                            <!-- Candidate 정책 파일 -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-file-earmark-spreadsheet"></i> Candidate 정책 파일 <span class="text-danger">*</span>
+                                </label>
+                                <div class="upload-area" id="candidateArea">
+                                    <i class="bi bi-cloud-upload fs-1 text-muted"></i>
+                                    <p class="mt-2">파일을 드래그하거나 클릭하여 선택</p>
+                                    <input type="file" class="form-control d-none" id="candidateFile" name="candidate_file" accept=".xlsx,.xls" required>
+                                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('candidateFile').click()">
+                                        파일 선택
+                                    </button>
+                                </div>
+                                <div class="file-list" id="candidateFileList"></div>
+                            </div>
+
+                            <!-- 대상 정책 파일들 -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-file-earmark-spreadsheet"></i> 대상 정책 파일 (여러 개 선택 가능)
+                                </label>
+                                <div class="upload-area" id="targetArea">
+                                    <i class="bi bi-cloud-upload fs-1 text-muted"></i>
+                                    <p class="mt-2">파일을 드래그하거나 클릭하여 선택 (여러 개 가능)</p>
+                                    <input type="file" class="form-control d-none" id="targetFiles" name="target_files" accept=".xlsx,.xls" multiple>
+                                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('targetFiles').click()">
+                                        파일 선택
+                                    </button>
+                                </div>
+                                <div class="file-list" id="targetFileList"></div>
+                            </div>
+
+                            <!-- 제출 버튼 -->
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                    <i class="bi bi-play-circle"></i> 검증 시작
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- 로딩 표시 -->
+                        <div class="loading mt-4" id="loadingDiv">
+                            <div class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">처리 중...</span>
+                                </div>
+                                <p class="mt-2">파일을 처리하고 있습니다. 잠시만 기다려주세요...</p>
+                            </div>
+                        </div>
+
+                        <!-- 결과 영역 -->
+                        <div id="resultArea" class="mt-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 파일 선택 이벤트
+        document.getElementById('runningFile').addEventListener('change', function(e) {
+            showFileList('runningFileList', e.target.files);
+        });
+        document.getElementById('candidateFile').addEventListener('change', function(e) {
+            showFileList('candidateFileList', e.target.files);
+        });
+        document.getElementById('targetFiles').addEventListener('change', function(e) {
+            showFileList('targetFileList', e.target.files);
+        });
+
+        function showFileList(containerId, files) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            Array.from(files).forEach(file => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `<i class="bi bi-file-earmark-spreadsheet"></i> ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+                container.appendChild(div);
+            });
+        }
+
+        // 드래그 앤 드롭
+        ['runningArea', 'candidateArea', 'targetArea'].forEach(areaId => {
+            const area = document.getElementById(areaId);
+            area.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                area.classList.add('dragover');
+            });
+            area.addEventListener('dragleave', () => {
+                area.classList.remove('dragover');
+            });
+            area.addEventListener('drop', (e) => {
+                e.preventDefault();
+                area.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (areaId === 'runningArea') {
+                    document.getElementById('runningFile').files = files;
+                    showFileList('runningFileList', files);
+                } else if (areaId === 'candidateArea') {
+                    document.getElementById('candidateFile').files = files;
+                    showFileList('candidateFileList', files);
+                } else {
+                    const targetInput = document.getElementById('targetFiles');
+                    const dt = new DataTransfer();
+                    Array.from(targetInput.files).forEach(f => dt.items.add(f));
+                    Array.from(files).forEach(f => dt.items.add(f));
+                    targetInput.files = dt.files;
+                    showFileList('targetFileList', targetInput.files);
+                }
+            });
+        });
+
+        // 폼 제출
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const submitBtn = document.getElementById('submitBtn');
+            const loadingDiv = document.getElementById('loadingDiv');
+            const resultArea = document.getElementById('resultArea');
+            
+            submitBtn.disabled = true;
+            loadingDiv.classList.add('show');
+            resultArea.innerHTML = '';
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    showResults(data);
+                } else {
+                    showError(data.error || '처리 중 오류가 발생했습니다.');
+                }
+            } catch (error) {
+                showError('네트워크 오류: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                loadingDiv.classList.remove('show');
+            }
+        });
+
+        function showResults(data) {
+            const resultArea = document.getElementById('resultArea');
+            const summary = data.summary;
+            
+            const statusKr = {
+                'DELETED': '삭제됨 ✓',
+                'DISABLED': '비활성화됨 ✓',
+                'NOT_DISABLED': '비활성화 안됨 ⚠',
+                'UNEXPECTED_DELETED': '대상 외 삭제됨 ⚠',
+                'UNEXPECTED_DISABLED': '대상 외 비활성화됨 ⚠',
+                'RE_ENABLED': '재활성화됨 ⚠',
+                'NO_CHANGE': '변경 없음',
+                'NOT_IN_RUNNING': 'Running에 없음',
+                'CHANGED': '변경됨'
+            };
+            
+            let html = `
+                <div class="alert alert-success">
+                    <h4><i class="bi bi-check-circle"></i> 검증 완료!</h4>
+                    <p class="mb-0">총 ${summary.total}개 정책이 검증되었습니다.</p>
+                </div>
+                
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 검증 결과 요약</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>대상 정책 검증</h6>
+                                <ul>
+                                    <li>삭제 확인: <span class="badge bg-success">${summary.deleted}개</span></li>
+                                    <li>비활성화 확인: <span class="badge bg-success">${summary.disabled}개</span>
+                                    ${summary.not_disabled > 0 ? `<li>비활성화 안됨: <span class="badge bg-warning">${summary.not_disabled}개</span></li>` : ''}
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>대상 외 정책</h6>
+                                <ul>
+                                    ${summary.unexpected_deleted > 0 ? `<li>삭제됨: <span class="badge bg-danger">${summary.unexpected_deleted}개</span></li>` : ''}
+                                    ${summary.unexpected_disabled > 0 ? `<li>비활성화됨: <span class="badge bg-danger">${summary.unexpected_disabled}개</span></li>` : ''}
+                                    ${summary.unexpected_deleted === 0 && summary.unexpected_disabled === 0 ? '<li>없음</li>' : ''}
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        <hr>
+                        <h6>상태별 통계</h6>
+                        <div class="row">
+            `;
+            
+            for (const [status, count] of Object.entries(summary.status_counts)) {
+                html += `
+                    <div class="col-md-4 mb-2">
+                        ${statusKr[status] || status}: <span class="badge bg-secondary">${count}개</span>
+                    </div>
+                `;
+            }
+            
+            html += `
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <a href="/download" class="btn btn-success btn-lg">
+                        <i class="bi bi-download"></i> 리포트 다운로드 (${data.report_filename})
+                    </a>
+                </div>
+            `;
+            
+            resultArea.innerHTML = html;
+        }
+
+        function showError(message) {
+            const resultArea = document.getElementById('resultArea');
+            resultArea.innerHTML = `
+                <div class="alert alert-danger">
+                    <h4><i class="bi bi-exclamation-triangle"></i> 오류 발생</h4>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
