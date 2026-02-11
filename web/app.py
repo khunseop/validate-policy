@@ -5,14 +5,19 @@ Flask 웹 애플리케이션: 방화벽 정책 검증
 """
 
 import sys
+import os
 from pathlib import Path
 
-# 상위 디렉터리를 경로에 추가
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 상위 디렉터리를 경로에 추가 (PyInstaller exe 시 bundle 루트)
+if getattr(sys, 'frozen', False):
+    _base = sys._MEIPASS
+    sys.path.insert(0, _base)
+else:
+    _base = str(Path(__file__).parent.parent)
+    sys.path.insert(0, _base)
 
 from flask import Flask, render_template, request, send_file, jsonify, session
 from werkzeug.utils import secure_filename
-import os
 from datetime import datetime
 import pandas as pd
 from core import parse_policy_file, parse_target_file, validate_policy_changes
@@ -23,7 +28,10 @@ import tempfile
 import shutil
 import uuid
 
-app = Flask(__name__, template_folder='templates', static_folder='static')
+# exe 빌드 시 템플릿/static은 _MEIPASS 아래에 있음
+_template = os.path.join(_base, 'templates') if getattr(sys, 'frozen', False) else 'templates'
+_static = os.path.join(_base, 'static') if getattr(sys, 'frozen', False) else 'static'
+app = Flask(__name__, template_folder=_template, static_folder=_static)
 app.secret_key = os.urandom(24)  # 세션 암호화용
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 최대 100MB 파일 업로드
 app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
