@@ -138,31 +138,59 @@ class SECUIParser:
             raise ValueError(f"시트 목록 가져오기 오류 ({file_path}): {e}")
     
     @staticmethod
+    def _diag_row_sample(row, limit: int = 25):
+        """진단용: 한 행의 셀 값 샘플을 짧은 문자열로 반환"""
+        if row is None:
+            return "None"
+        if not isinstance(row, (list, tuple)):
+            return repr(row)[:50]
+        parts = []
+        for i, c in enumerate(row[:limit]):
+            if c is None:
+                parts.append("_")
+            else:
+                s = str(c).strip()[:12]
+                parts.append(s if s else "''")
+        return "[" + ", ".join(parts) + ("]" if len(row) <= limit else f", ... ({len(row)} cols)]")
+
+    @staticmethod
     def parse_policy_file(file_path: str, sheet_name: str) -> pd.DataFrame:
         """
         SECUI 방화벽 정책 Excel 파일을 파싱합니다.
-        병합된 셀/대용량 시트 대비해 범위를 한 번에 읽고(값만), 병합 셀은 전방 채우기로 처리합니다.
+        실패 시 [SECUI 파싱] 로 시작하는 메시지로 어느 단계에서 실패했는지 알 수 있습니다.
         """
+        diag = []  # 진행 단계 기록 (실패 시 메시지에 포함)
         try:
+            diag.append("파일 열기")
             with xw.App(visible=False) as app:
                 wb = app.books.open(file_path)
-                if sheet_name not in [s.name for s in wb.sheets]:
+                diag.append("시트 목록 확인")
+                sheet_names = [s.name for s in wb.sheets]
+                if sheet_name not in sheet_names:
                     wb.close()
-                    raise ValueError(f"시트 '{sheet_name}'를 찾을 수 없습니다.")
+                    raise ValueError(
+                        f"[SECUI 파싱] 시트를 찾을 수 없습니다. "
+                        f"요청 시트: {sheet_name!r}, 존재 시트: {sheet_names}. "
+                        f"진행: {' > '.join(diag)}"
+                    )
                 ws = wb.sheets[sheet_name]
+                diag.append("used_range 확인")
                 if not ws.used_range:
                     wb.close()
                     return pd.DataFrame(columns=['Rulename', 'Enable'])
                 max_row = ws.used_range.last_cell.row
                 max_col = min(ws.used_range.last_cell.column, 200)
+                diag.append(f"범위 확인 (max_row={max_row}, max_col={max_col})")
 
-                # 1~2행: 사용 안 함(삭제/무시). 3~8행: 병합된 헤더 영역. 9행~: 데이터.
-                # 컬럼 판단: 3행을 먼저 사용(병합 시 값이 3행에 있을 가능성 높음), 없으면 4~8행 스캔
+                # 1~2행 무시, 3~8행 헤더, 9행~ 데이터
+                diag.append("헤더 블록 읽기 (3~8행)")
                 header_block = ws.range((3, 1), (min(8, max_row), max_col)).value
                 if header_block is None:
                     header_block = []
                 elif header_block and not isinstance(header_block[0], (list, tuple)):
                     header_block = [header_block]
+                diag.append(f"헤더 블록 행 수={len(header_block)}")
+
                 id_col_idx = None
                 enable_col_idx = None
 
@@ -180,7 +208,6 @@ class SECUIParser:
                         if enable_col_idx is None and s == 'enable':
                             enable_col_idx = c
 
-                # 3행으로 먼저 컬럼 판단
                 if header_block:
                     scan_row_for_headers(header_block[0], max_col)
                 for row in (header_block[1:] if len(header_block) > 1 else []):
@@ -188,31 +215,54 @@ class SECUIParser:
                         break
                     scan_row_for_headers(row, max_col)
 
+                # 헤더에서 못 찾으면 9행부터 데이터로 ID 컬럼 추정
                 if id_col_idx is None and max_row >= 9:
+                    diag.append("헤더에 ID 없음 → 데이터 샘플로 ID 컬럼 추정")
                     data_sample = ws.range((9, 1), (min(28, max_row), max_col)).value
                     if data_sample is not None:
                         id_col_idx = SECUIParser._find_id_column_from_block(data_sample, max_col)
+
                 if enable_col_idx is None:
+                    row3_sample = SECUIParser._diag_row_sample(
+                        header_block[0] if header_block else None
+                    )
                     wb.close()
-                    raise ValueError(f"'{file_path}' 시트 '{sheet_name}'에서 'Enable' 컬럼을 찾을 수 없습니다.")
+                    raise ValueError(
+                        f"[SECUI 파싱] 헤더(3~8행)에서 'Enable' 컬럼을 찾을 수 없습니다. "
+                        f"3행 셀 샘플: {row3_sample}. "
+                        f"진행: {' > '.join(diag)}"
+                    )
                 if id_col_idx is None:
+                    row3_sample = SECUIParser._diag_row_sample(
+                        header_block[0] if header_block else None
+                    )
                     wb.close()
-                    raise ValueError(f"'{file_path}' 시트 '{sheet_name}'에서 ID 컬럼을 찾을 수 없습니다.")
+                    raise ValueError(
+                        f"[SECUI 파싱] 헤더(3~8행)와 데이터 샘플에서 'ID' 컬럼을 찾을 수 없습니다. "
+                        f"3행 셀 샘플: {row3_sample}. "
+                        f"진행: {' > '.join(diag)}"
+                    )
+
+                diag.append(f"컬럼 위치: ID={id_col_idx}열, Enable={enable_col_idx}열")
 
                 data_start_row = 9
                 if data_start_row > max_row:
                     wb.close()
                     return pd.DataFrame(columns=['Rulename', 'Enable'])
 
-                # 데이터 전체를 한 번에 읽기 (값만 읽어서 병합/수식 부담 감소)
+                diag.append("데이터 블록 읽기 (9행~)")
                 data_block = ws.range((data_start_row, 1), (max_row, max_col)).value
                 wb.close()
 
             # 블록이 단일 행이면 2차원으로
+            diag.append("데이터 블록 정규화")
             if data_block is None:
                 data_block = []
             elif not isinstance(data_block[0], (list, tuple)):
                 data_block = [data_block]
+            num_data_rows = len(data_block)
+            diag.append(f"데이터 행 수={num_data_rows}")
+
             id_col_0 = id_col_idx - 1
             enable_col_0 = enable_col_idx - 1
             id_values = []
@@ -242,14 +292,19 @@ class SECUIParser:
                     id_values.append(id_str)
                     enable_values.append((en_val if en_val is not None else '').__str__().strip())
 
+            diag.append("DataFrame 생성")
             df = pd.DataFrame({'Rulename': id_values, 'Enable': enable_values})
             df['Rulename'] = df['Rulename'].fillna('').astype(str).str.strip()
             df['Enable'] = df['Enable'].fillna('').astype(str).str.strip()
             df = df[~((df['Rulename'] == '') & (df['Enable'] == ''))]
             df = df.drop_duplicates().reset_index(drop=True)
             return df
+        except ValueError:
+            raise
         except Exception as e:
-            raise ValueError(f"파일 파싱 오류 ({file_path}, 시트: {sheet_name}): {e}")
+            raise ValueError(
+                f"[SECUI 파싱] 예외 발생. 진행: {' > '.join(diag)}. 원인: {type(e).__name__}: {e}"
+            ) from e
     
     @staticmethod
     def _find_id_column_from_block(data_block, max_col: int) -> Optional[int]:
