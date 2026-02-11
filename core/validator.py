@@ -8,6 +8,25 @@ import pandas as pd
 from typing import List
 
 
+def normalize_policy_name(val) -> str:
+    """
+    정책명을 비교용 문자열로 통일합니다.
+    - 정책 파일의 ID가 float(12.0)으로 오면 '12'로, 대상 정책명이 '12'(str)면 그대로 사용해 비교 가능하게 함.
+    """
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    s = str(val).strip()
+    if not s:
+        return ""
+    try:
+        n = float(s)
+        if n == int(n):
+            return str(int(n))
+    except (ValueError, TypeError):
+        pass
+    return s
+
+
 def normalize_enable(value: str) -> str:
     """
     Enable 값을 정규화합니다. Y/N 형식을 처리합니다.
@@ -49,25 +68,25 @@ def validate_policy_changes(
         pd.DataFrame: 검증 결과 리포트
                      컬럼: ['Policy', 'Status', 'Running_Enable', 'Candidate_Enable', 'Message', 'IsTarget']
     """
-    # 성능 최적화: 딕셔너리로 변환하여 O(1) 조회
+    # 성능 최적화: 딕셔너리로 변환하여 O(1) 조회. 정책명은 normalize로 통일 (12.0 vs "12" 비교 가능)
     running_dict = {}
     for _, row in running_df.iterrows():
-        policy_name = str(row['Rulename']).strip()
+        policy_name = normalize_policy_name(row['Rulename'])
         if policy_name:
             running_dict[policy_name] = normalize_enable(row['Enable'])
     
     candidate_dict = {}
     for _, row in candidate_df.iterrows():
-        policy_name = str(row['Rulename']).strip()
+        policy_name = normalize_policy_name(row['Rulename'])
         if policy_name:
             candidate_dict[policy_name] = normalize_enable(row['Enable'])
     
     results = []
-    target_set = set(p.strip() for p in target_policies if p.strip())
+    target_set = set(normalize_policy_name(p) for p in target_policies if normalize_policy_name(p))
     
     # 1. 대상 정책 검증
     for policy_name in target_policies:
-        policy_name = str(policy_name).strip()
+        policy_name = normalize_policy_name(policy_name)
         if not policy_name:
             continue
         
