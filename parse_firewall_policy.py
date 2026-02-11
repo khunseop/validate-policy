@@ -37,10 +37,9 @@ def parse_policy_file(file_path):
 
         df_filtered = df[required_columns].copy()
 
-        # Strip whitespace from string columns
+        # Fill NaN values with empty strings before stripping whitespace from string columns
         for col in df_filtered.columns:
-            if df_filtered[col].dtype == 'object': # Check if column contains strings
-                df_filtered[col] = df_filtered[col].astype(str).str.strip()
+            df_filtered[col] = df_filtered[col].fillna('').astype(str).str.strip()
 
         # Remove duplicate rows
         df_processed = df_filtered.drop_duplicates()
@@ -54,10 +53,16 @@ def parse_policy_file(file_path):
 if __name__ == "__main__":
     running_policy_file = "running_policy.xlsx"
     candidate_policy_file = "candidate_policy.xlsx"
-
+    
+    running_output_file = "running_policy_processed.xlsx"
+    candidate_output_file = "candidate_policy_processed.xlsx"
+    
     print(f"--- Parsing Running Policy: {running_policy_file} ---")
     running_policy_data = parse_policy_file(running_policy_file)
     print(running_policy_data)
+    if not running_policy_data.empty:
+        running_policy_data.to_excel(running_output_file, index=False)
+        print(f"Processed running policy saved to {running_output_file}")
     print("
 " + "="*50 + "
 ")
@@ -65,6 +70,9 @@ if __name__ == "__main__":
     print(f"--- Parsing Candidate Policy: {candidate_policy_file} ---")
     candidate_policy_data = parse_policy_file(candidate_policy_file)
     print(candidate_policy_data)
+    if not candidate_policy_data.empty:
+        candidate_policy_data.to_excel(candidate_output_file, index=False)
+        print(f"Processed candidate policy saved to {candidate_output_file}")
     print("
 " + "="*50 + "
 ")
