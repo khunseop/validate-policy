@@ -58,6 +58,38 @@
                         </div>
 
                         <form id="uploadForm" enctype="multipart/form-data">
+                            <!-- 벤더 선택 -->
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">
+                                    <i class="bi bi-building"></i> 벤더 선택 <span class="text-danger">*</span>
+                                </label>
+                                <select class="form-select" id="vendorSelect" name="vendor" required>
+                                    <option value="Paloalto" selected>Paloalto (Rulename, Enable 컬럼)</option>
+                                    <option value="SECUI">SECUI (ID 숫자, Enable 컬럼, 작업 전/후 시트)</option>
+                                </select>
+                            </div>
+
+                            <!-- SECUI 시트 선택 영역 (초기 숨김) -->
+                            <div class="mb-4" id="secuiSheetArea" style="display: none;">
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-info-circle"></i> SECUI는 하나의 파일에 작업 전/후 시트가 있습니다.
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">작업 전 시트 (Running)</label>
+                                        <select class="form-select" id="runningSheetSelect" name="running_sheet">
+                                            <option value="">파일 선택 후 시트 목록이 표시됩니다</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">작업 후 시트 (Candidate)</label>
+                                        <select class="form-select" id="candidateSheetSelect" name="candidate_sheet">
+                                            <option value="">파일 선택 후 시트 목록이 표시됩니다</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Running 정책 파일 -->
                             <div class="mb-4">
                                 <label class="form-label fw-bold">
@@ -74,15 +106,15 @@
                                 <div class="file-list" id="runningFileList"></div>
                             </div>
 
-                            <!-- Candidate 정책 파일 -->
-                            <div class="mb-4">
+                            <!-- Candidate 정책 파일 (Paloalto만 표시) -->
+                            <div class="mb-4" id="candidateFileArea">
                                 <label class="form-label fw-bold">
                                     <i class="bi bi-file-earmark-spreadsheet"></i> Candidate 정책 파일 <span class="text-danger">*</span>
                                 </label>
                                 <div class="upload-area" id="candidateArea">
                                     <i class="bi bi-cloud-upload fs-1 text-muted"></i>
                                     <p class="mt-2">파일을 드래그하거나 클릭하여 선택</p>
-                                    <input type="file" class="form-control d-none" id="candidateFile" name="candidate_file" accept=".xlsx,.xls" required>
+                                    <input type="file" class="form-control d-none" id="candidateFile" name="candidate_file" accept=".xlsx,.xls">
                                     <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('candidateFile').click()">
                                         파일 선택
                                     </button>
@@ -134,10 +166,66 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // 파일 선택 이벤트
-        document.getElementById('runningFile').addEventListener('change', function(e) {
-            showFileList('runningFileList', e.target.files);
+        // 벤더 선택에 따른 UI 변경
+        document.getElementById('vendorSelect').addEventListener('change', function(e) {
+            const vendor = e.target.value;
+            const secuiArea = document.getElementById('secuiSheetArea');
+            const candidateArea = document.getElementById('candidateFileArea');
+            const candidateFile = document.getElementById('candidateFile');
+            
+            if (vendor === 'SECUI') {
+                secuiArea.style.display = 'block';
+                candidateArea.style.display = 'none';
+                candidateFile.removeAttribute('required');
+            } else {
+                secuiArea.style.display = 'none';
+                candidateArea.style.display = 'block';
+                candidateFile.setAttribute('required', 'required');
+            }
         });
+        
+        // SECUI 파일 선택 시 시트 목록 가져오기
+        document.getElementById('runningFile').addEventListener('change', async function(e) {
+            showFileList('runningFileList', e.target.files);
+            
+            const vendor = document.getElementById('vendorSelect').value;
+            if (vendor === 'SECUI' && e.target.files.length > 0) {
+                await loadSheets(e.target.files[0], 'running');
+            }
+        });
+        
+        async function loadSheets(file, type) {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/get_sheets', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.sheets) {
+                    const selectId = type === 'running' ? 'runningSheetSelect' : 'candidateSheetSelect';
+                    const select = document.getElementById(selectId);
+                    select.innerHTML = '<option value="">시트를 선택하세요</option>';
+                    
+                    data.sheets.forEach(sheet => {
+                        const option = document.createElement('option');
+                        option.value = sheet;
+                        option.textContent = sheet;
+                        select.appendChild(option);
+                    });
+                } else {
+                    alert('시트 목록을 가져오는데 실패했습니다: ' + (data.error || '알 수 없는 오류'));
+                }
+            } catch (error) {
+                alert('시트 목록을 가져오는데 실패했습니다: ' + error.message);
+            }
+        }
+        
+        // 파일 선택 이벤트
         document.getElementById('candidateFile').addEventListener('change', function(e) {
             showFileList('candidateFileList', e.target.files);
         });
@@ -191,7 +279,14 @@
         document.getElementById('uploadForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
+            const vendor = document.getElementById('vendorSelect').value;
             const formData = new FormData(this);
+            
+            // SECUI의 경우 candidate_file 제거 (같은 파일 사용)
+            if (vendor === 'SECUI') {
+                formData.delete('candidate_file');
+            }
+            
             const submitBtn = document.getElementById('submitBtn');
             const loadingDiv = document.getElementById('loadingDiv');
             const resultArea = document.getElementById('resultArea');
