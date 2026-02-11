@@ -36,49 +36,84 @@ def parse_policy_file(file_path: str) -> pd.DataFrame:
                 wb.close()
                 return pd.DataFrame(columns=['Rulename', 'Enable'])
             
-            # 전체 데이터를 한 번에 읽기 (성능 최적화)
-            # 최대 1000행, 100열까지 읽기
-            max_row = min(ws.used_range.last_cell.row, 1000)
-            max_col = min(ws.used_range.last_cell.column, 100)
+            # 실제 사용된 마지막 행과 열 가져오기 (제한 없음)
+            max_row = ws.used_range.last_cell.row
+            max_col = ws.used_range.last_cell.column
             
-            # 전체 범위를 한 번에 읽어서 pandas DataFrame으로 변환
-            data_range = ws.range((1, 1), (max_row, max_col))
-            df_raw = data_range.options(pd.DataFrame, header=False, index=False).value
+            # 헤더 행 찾기: 'Rulename'과 'Enable' 컬럼이 있는 행 찾기
+            # 첫 50행에서 헤더 찾기 (충분한 범위)
+            header_row_idx = None
+            rulename_col_idx = None
+            enable_col_idx = None
+            
+            search_rows = min(50, max_row)
+            for row_idx in range(1, search_rows + 1):
+                for col_idx in range(1, min(max_col + 1, 200)):  # 최대 200열까지 검색
+                    cell_value = ws.range((row_idx, col_idx)).value
+                    if cell_value:
+                        cell_str = str(cell_value).strip().lower()
+                        if cell_str == 'rulename' and rulename_col_idx is None:
+                            rulename_col_idx = col_idx
+                        elif cell_str == 'enable' and enable_col_idx is None:
+                            enable_col_idx = col_idx
+                
+                # 두 컬럼을 모두 찾으면 헤더 행으로 설정
+                if rulename_col_idx is not None and enable_col_idx is not None:
+                    header_row_idx = row_idx
+                    break
+            
+            if header_row_idx is None or rulename_col_idx is None or enable_col_idx is None:
+                wb.close()
+                raise ValueError(f"'{file_path}'에서 'Rulename'과 'Enable' 컬럼을 찾을 수 없습니다.")
+            
+            # 헤더 행 이후부터 마지막 행까지 Rulename과 Enable 컬럼만 읽기
+            # 성능 최적화: 필요한 두 컬럼만 직접 읽기
+            data_start_row = header_row_idx + 1
+            data_end_row = max_row
+            
+            # 데이터가 있는 경우에만 읽기
+            if data_start_row <= data_end_row:
+                # Rulename 컬럼 읽기 (헤더 행 다음부터 끝까지)
+                rulename_range = ws.range((data_start_row, rulename_col_idx), (data_end_row, rulename_col_idx))
+                rulename_values = rulename_range.value
+                
+                # Enable 컬럼 읽기 (헤더 행 다음부터 끝까지)
+                enable_range = ws.range((data_start_row, enable_col_idx), (data_end_row, enable_col_idx))
+                enable_values = enable_range.value
+            else:
+                # 데이터가 없는 경우 빈 리스트
+                rulename_values = []
+                enable_values = []
             
             wb.close()
         
-        # 헤더 행 찾기: 'Rulename'과 'Enable' 컬럼이 있는 행 찾기
-        header_row_idx = None
-        rulename_col_idx = None
-        enable_col_idx = None
+        # 리스트로 변환 (xlwings 반환값 처리)
+        # xlwings는 단일 셀을 읽으면 단일 값, 여러 셀을 읽으면 리스트 또는 2D 배열로 반환
+        def normalize_values(values):
+            if values is None:
+                return []
+            elif not isinstance(values, list):
+                return [values]
+            elif len(values) > 0 and isinstance(values[0], list):
+                # 2D 배열인 경우 첫 번째 요소만 추출 (단일 컬럼이므로)
+                return [row[0] if row else None for row in values]
+            else:
+                return values
         
-        # 첫 20행에서 헤더 찾기
-        for idx in range(min(20, len(df_raw))):
-            row = df_raw.iloc[idx]
-            # 각 셀을 확인하여 'rulename'과 'enable' 찾기
-            for col_idx, cell_value in enumerate(row):
-                if pd.notna(cell_value):
-                    cell_str = str(cell_value).strip().lower()
-                    if cell_str == 'rulename' and rulename_col_idx is None:
-                        rulename_col_idx = col_idx
-                    elif cell_str == 'enable' and enable_col_idx is None:
-                        enable_col_idx = col_idx
-            
-            # 두 컬럼을 모두 찾으면 헤더 행으로 설정
-            if rulename_col_idx is not None and enable_col_idx is not None:
-                header_row_idx = idx
-                break
+        rulename_values = normalize_values(rulename_values)
+        enable_values = normalize_values(enable_values)
         
-        if header_row_idx is None or rulename_col_idx is None or enable_col_idx is None:
-            raise ValueError(f"'{file_path}'에서 'Rulename'과 'Enable' 컬럼을 찾을 수 없습니다.")
+        # 길이가 다른 경우 짧은 쪽에 맞춤
+        min_len = min(len(rulename_values), len(enable_values))
+        if len(rulename_values) > min_len:
+            rulename_values = rulename_values[:min_len]
+        if len(enable_values) > min_len:
+            enable_values = enable_values[:min_len]
         
-        # 헤더 행 이후의 데이터 추출
-        df_data = df_raw.iloc[header_row_idx + 1:].copy()
-        
-        # 필요한 컬럼만 선택
+        # DataFrame 생성
         df_filtered = pd.DataFrame({
-            'Rulename': df_data.iloc[:, rulename_col_idx],
-            'Enable': df_data.iloc[:, enable_col_idx]
+            'Rulename': rulename_values,
+            'Enable': enable_values
         })
         
         # 문자열로 변환하고 공백 제거
@@ -130,7 +165,8 @@ def load_target_policies(file_path: str) -> list:
                     return []
                 
                 # 첫 번째 컬럼을 한 번에 읽기 (성능 최적화)
-                max_row = min(ws.used_range.last_cell.row, 1000)
+                # 행 제한 없이 끝까지 읽기
+                max_row = ws.used_range.last_cell.row
                 first_col_range = ws.range((1, 1), (max_row, 1))
                 values = first_col_range.value
                 
