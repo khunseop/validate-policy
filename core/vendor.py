@@ -166,35 +166,33 @@ class SECUIParser:
                 max_row = ws.used_range.last_cell.row
                 max_col = ws.used_range.last_cell.column
                 
-                # 헤더 행 찾기 (ID 컬럼과 Enable 컬럼)
-                header_row_idx = None
+                # SECUI 포맷: 1-2행 제거, 3-8행에 컬럼명 (병합 셀), 9행부터 데이터
+                # 헤더 행 찾기 (3-8행에서 컬럼명 찾기)
                 id_col_idx = None
                 enable_col_idx = None
                 
-                search_rows = min(50, max_row)
-                for row_idx in range(1, search_rows + 1):
+                # 3-8행에서 컬럼명 찾기 (병합 셀 고려)
+                for row_idx in range(3, min(9, max_row + 1)):
                     for col_idx in range(1, min(max_col + 1, 200)):
                         cell_value = ws.range((row_idx, col_idx)).value
                         if cell_value:
                             cell_str = str(cell_value).strip().lower()
-                            # ID 컬럼 찾기 (숫자로만 이루어진 값이 있는 컬럼)
-                            if id_col_idx is None:
-                                # ID는 숫자로만 이루어져 있으므로, 헤더 행에서 "id"를 찾거나
-                                # 데이터 행에서 숫자만 있는 셀을 찾아야 함
-                                if cell_str == 'id':
-                                    id_col_idx = col_idx
-                            elif enable_col_idx is None and cell_str == 'enable':
+                            # ID 컬럼 찾기
+                            if id_col_idx is None and cell_str == 'id':
+                                id_col_idx = col_idx
+                            # Enable 컬럼 찾기
+                            if enable_col_idx is None and cell_str == 'enable':
                                 enable_col_idx = col_idx
                     
-                    # Enable 컬럼을 찾으면 헤더 행으로 설정
-                    if enable_col_idx is not None:
-                        header_row_idx = row_idx
-                        # ID 컬럼이 아직 없으면 데이터 행에서 숫자만 있는 컬럼 찾기
-                        if id_col_idx is None:
-                            id_col_idx = SECUIParser._find_id_column(ws, header_row_idx, max_row, max_col)
+                    # 두 컬럼을 모두 찾으면 종료
+                    if id_col_idx is not None and enable_col_idx is not None:
                         break
                 
-                if header_row_idx is None or enable_col_idx is None:
+                # ID 컬럼이 없으면 데이터 행에서 숫자만 있는 컬럼 찾기
+                if id_col_idx is None:
+                    id_col_idx = SECUIParser._find_id_column(ws, 8, max_row, max_col)
+                
+                if enable_col_idx is None:
                     wb.close()
                     raise ValueError(f"'{file_path}' 시트 '{sheet_name}'에서 'Enable' 컬럼을 찾을 수 없습니다.")
                 
@@ -202,8 +200,8 @@ class SECUIParser:
                     wb.close()
                     raise ValueError(f"'{file_path}' 시트 '{sheet_name}'에서 ID 컬럼을 찾을 수 없습니다.")
                 
-                # 데이터 읽기
-                data_start_row = header_row_idx + 1
+                # 데이터 읽기 (9행부터 시작)
+                data_start_row = 9
                 data_end_row = max_row
                 
                 if data_start_row <= data_end_row:
@@ -221,13 +219,16 @@ class SECUIParser:
                         
                         # 병합 셀 처리: 값이 None이면 위쪽 셀 값 사용
                         if id_value is None:
-                            # 위쪽 행들을 확인하여 값 찾기 (최대 20행까지 확인)
-                            for check_row in range(row_idx - 1, max(header_row_idx, row_idx - 20), -1):
+                            # 위쪽 행들을 확인하여 값 찾기 (최대 20행까지 확인, 8행까지는 헤더이므로 9행부터)
+                            for check_row in range(row_idx - 1, max(data_start_row - 1, row_idx - 20), -1):
                                 check_cell = ws.range((check_row, id_col_idx))
                                 check_value = check_cell.value
                                 if check_value is not None:
-                                    id_value = check_value
-                                    break
+                                    check_str = str(check_value).strip()
+                                    # 숫자로만 이루어진 값만 사용
+                                    if re.match(r'^\d+$', check_str):
+                                        id_value = check_value
+                                        break
                             
                             # 위에서도 못 찾으면 마지막 ID 값 사용
                             if id_value is None and last_id_value is not None:
@@ -236,6 +237,15 @@ class SECUIParser:
                         # Enable 값 읽기
                         enable_cell = ws.range((row_idx, enable_col_idx))
                         enable_value = enable_cell.value
+                        
+                        # 병합 셀 처리: Enable 값이 None이면 위쪽 셀 값 확인
+                        if enable_value is None:
+                            for check_row in range(row_idx - 1, max(data_start_row - 1, row_idx - 20), -1):
+                                check_cell = ws.range((check_row, enable_col_idx))
+                                check_value = check_cell.value
+                                if check_value is not None:
+                                    enable_value = check_value
+                                    break
                         
                         # ID가 숫자로만 이루어져 있는지 확인
                         if id_value is not None:
@@ -275,36 +285,52 @@ class SECUIParser:
             raise ValueError(f"파일 파싱 오류 ({file_path}, 시트: {sheet_name}): {e}")
     
     @staticmethod
-    def _find_id_column(ws, header_row_idx: int, max_row: int, max_col: int) -> Optional[int]:
+    def _find_id_column(ws, start_row: int, max_row: int, max_col: int) -> Optional[int]:
         """
         데이터 행에서 숫자로만 이루어진 값이 있는 컬럼을 찾습니다.
         
         Args:
             ws: 워크시트 객체
-            header_row_idx: 헤더 행 인덱스
+            start_row: 시작 행 인덱스 (데이터 시작 행)
             max_row: 최대 행
             max_col: 최대 열
         
         Returns:
             Optional[int]: ID 컬럼 인덱스 (없으면 None)
         """
-        # 헤더 행 다음 10행 정도를 확인하여 숫자만 있는 컬럼 찾기
-        check_rows = min(10, max_row - header_row_idx)
+        # 시작 행부터 20행 정도를 확인하여 숫자만 있는 컬럼 찾기
+        check_rows = min(20, max_row - start_row + 1)
         
         for col_idx in range(1, min(max_col + 1, 200)):
             numeric_count = 0
-            for row_offset in range(1, check_rows + 1):
-                row_idx = header_row_idx + row_offset
+            total_count = 0
+            
+            for row_offset in range(check_rows):
+                row_idx = start_row + row_offset
+                if row_idx > max_row:
+                    break
+                    
                 cell_value = ws.range((row_idx, col_idx)).value
                 
+                # 병합 셀 처리: 값이 None이면 위쪽 셀 값 확인
+                if cell_value is None:
+                    # 위쪽 행들을 확인하여 값 찾기 (최대 10행까지)
+                    for check_row in range(row_idx - 1, max(start_row - 1, row_idx - 10), -1):
+                        check_cell = ws.range((check_row, col_idx))
+                        check_value = check_cell.value
+                        if check_value is not None:
+                            cell_value = check_value
+                            break
+                
                 if cell_value is not None:
+                    total_count += 1
                     cell_str = str(cell_value).strip()
                     # 숫자로만 이루어져 있는지 확인
                     if re.match(r'^\d+$', cell_str):
                         numeric_count += 1
             
-            # 대부분의 값이 숫자면 ID 컬럼으로 판단
-            if numeric_count >= check_rows * 0.7:  # 70% 이상이 숫자면
+            # 충분한 데이터가 있고 대부분의 값이 숫자면 ID 컬럼으로 판단
+            if total_count >= 5 and numeric_count >= total_count * 0.7:  # 최소 5개, 70% 이상이 숫자면
                 return col_idx
         
         return None
