@@ -22,6 +22,7 @@ from core.vendor import PaloaltoParser, SECUIParser
 from rich.console import Console
 import tempfile
 import shutil
+import uuid
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)  # 세션 암호화용
@@ -37,6 +38,13 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 def allowed_file(filename):
     """파일 확장자 확인"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_upload_dir():
+    """세션별 업로드 디렉터리 경로 반환 (SecureCookieSession에는 sid가 없으므로 _upload_id 사용)"""
+    if '_upload_id' not in session:
+        session['_upload_id'] = str(uuid.uuid4())
+    return Path(app.config['UPLOAD_FOLDER']) / session['_upload_id']
 
 
 @app.route('/')
@@ -57,7 +65,7 @@ def get_sheets():
             return jsonify({'error': '파일을 선택해주세요.'}), 400
         
         # 임시 저장
-        upload_dir = Path(app.config['UPLOAD_FOLDER']) / session.sid
+        upload_dir = get_upload_dir()
         upload_dir.mkdir(parents=True, exist_ok=True)
         temp_path = upload_dir / f"temp_{secure_filename(file.filename)}"
         file.save(str(temp_path))
@@ -104,7 +112,7 @@ def upload_files():
                 return jsonify({'error': 'Excel 파일만 업로드 가능합니다 (.xlsx, .xls)'}), 400
             
             # 파일 저장
-            upload_dir = Path(app.config['UPLOAD_FOLDER']) / session.sid
+            upload_dir = get_upload_dir()
             upload_dir.mkdir(parents=True, exist_ok=True)
             
             running_path = upload_dir / secure_filename(running_file.filename)
@@ -125,7 +133,7 @@ def upload_files():
                 return jsonify({'error': 'Excel 파일만 업로드 가능합니다 (.xlsx, .xls)'}), 400
             
             # 파일 저장
-            upload_dir = Path(app.config['UPLOAD_FOLDER']) / session.sid
+            upload_dir = get_upload_dir()
             upload_dir.mkdir(parents=True, exist_ok=True)
             
             running_path = upload_dir / secure_filename(running_file.filename)
