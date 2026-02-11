@@ -70,8 +70,14 @@ def get_sheets():
         temp_path = upload_dir / f"temp_{secure_filename(file.filename)}"
         file.save(str(temp_path))
         
-        # 시트 목록 가져오기
-        sheets = SECUIParser.get_sheets(str(temp_path))
+        # 시트 목록 가져오기 (openpyxl 사용 - Excel 설치 없이 동작)
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(str(temp_path), read_only=True)
+            sheets = wb.sheetnames
+            wb.close()
+        except Exception:
+            sheets = SECUIParser.get_sheets(str(temp_path))
         
         # 임시 파일 삭제
         temp_path.unlink()
@@ -85,9 +91,11 @@ def get_sheets():
 def upload_files():
     """파일 업로드 및 검증 처리"""
     try:
-        # 세션 초기화
-        session['results'] = None
-        session['report_file'] = None
+        # 세션 초기화 (대용량 데이터 제거, 쿠키 크기 제한 방지)
+        session.pop('results', None)
+        session.pop('report_file', None)
+        session.pop('report_filename', None)
+        session.pop('summary', None)
         
         # 벤더 정보 가져오기
         vendor = request.form.get('vendor', 'Paloalto')
@@ -206,9 +214,8 @@ def upload_files():
         # 결과 요약 생성
         summary = get_summary_dict(validation_results)
         
-        # 세션에 저장
-        session['results'] = validation_results.to_dict('records')
-        session['report_file'] = str(report_path)
+        # 세션에는 파일명·요약만 저장 (쿠키 4KB 제한 방지, 대용량 results 제외)
+        session['report_filename'] = report_filename
         session['summary'] = summary
         
         return jsonify({
@@ -227,28 +234,29 @@ def upload_files():
 @app.route('/download')
 def download_report():
     """리포트 다운로드"""
-    report_file = session.get('report_file')
-    if not report_file or not os.path.exists(report_file):
+    report_filename = session.get('report_filename')
+    if not report_filename:
+        return jsonify({'error': '리포트 파일을 찾을 수 없습니다.'}), 404
+    report_path = get_upload_dir() / report_filename
+    if not report_path.exists():
         return jsonify({'error': '리포트 파일을 찾을 수 없습니다.'}), 404
     
     return send_file(
-        report_file,
+        str(report_path),
         as_attachment=True,
-        download_name=os.path.basename(report_file),
+        download_name=report_filename,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
 
 
 @app.route('/results')
 def show_results():
-    """결과 페이지"""
-    results = session.get('results')
+    """결과 페이지 (요약만 세션에 있음, 상세는 리포트 다운로드로 확인)"""
     summary = session.get('summary')
-    
-    if not results or not summary:
+    report_filename = session.get('report_filename')
+    if not summary or not report_filename:
         return render_template('index.html', error='검증 결과가 없습니다.')
-    
-    return render_template('results.html', results=results, summary=summary)
+    return render_template('index.html', summary_only=summary, report_filename=report_filename)
 
 
 if __name__ == '__main__':
