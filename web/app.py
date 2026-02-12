@@ -160,12 +160,14 @@ def upload_files():
             running_file.save(str(running_path))
             candidate_file.save(str(candidate_path))
         
-        # 대상 파일 저장
+        # 대상 파일 저장 (여러 파일 선택 시 같은 파일명이면 덮어쓰기 방지를 위해 인덱스 부여)
         target_files = request.files.getlist('target_files')
         target_paths = []
-        for target_file in target_files:
+        for i, target_file in enumerate(target_files):
             if target_file.filename and allowed_file(target_file.filename):
-                target_path = upload_dir / secure_filename(target_file.filename)
+                base = secure_filename(target_file.filename)
+                name, ext = os.path.splitext(base)
+                target_path = upload_dir / f"target_{i}_{name}{ext}"
                 target_file.save(str(target_path))
                 target_paths.append(target_path)
         
