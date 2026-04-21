@@ -297,6 +297,6 @@ if __name__ == '__main__':
     atexit.register(cleanup_temp_files)
     
     console.print("[bold green]방화벽 정책 검증 웹 애플리케이션 시작[/bold green]")
-    console.print("[cyan]로컬 접속: http://127.0.0.1:5000[/cyan]\n")
+    console.print("[cyan]로컬 접속: http://127.0.0.1:5009[/cyan]\n")
     
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5009, debug=True)
