@@ -6,6 +6,14 @@ CLI 메인 진입점
 
 import os
 import sys
+
+# 표준 출력을 UTF-8로 강제 재설정 (CP949 등에서 유니코드 출력 오류 방지)
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from pathlib import Path
 from datetime import datetime
 from rich.console import Console

@@ -5,6 +5,16 @@ Flask 웹 애플리케이션: 방화벽 정책 검증
 방화벽 정책 검증 웹 애플리케이션
 """
 
+import sys
+import os
+
+# 표준 출력을 UTF-8로 강제 재설정 (CP949 등에서 유니코드 출력 오류 방지)
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from flask import Flask, render_template, request, send_file, jsonify, session
 from werkzeug.utils import secure_filename
 import os
