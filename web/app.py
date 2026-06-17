@@ -24,7 +24,7 @@ else:
     _base = str(Path(__file__).parent.parent)
     sys.path.insert(0, _base)
 
-from flask import Flask, render_template, request, send_file, jsonify, session
+from flask import Flask, render_template, request, send_file, jsonify, session, after_this_request
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import pandas as pd
@@ -43,6 +43,15 @@ app = Flask(__name__, template_folder=_template, static_folder=_static)
 app.secret_key = os.urandom(24)  # 세션 암호화용
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 최대 100MB 파일 업로드
 app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
+
+
+@app.after_request
+def add_cors_headers(response):
+    """Chrome 확장 프로그램에서 localhost fetch 시 CORS 허용"""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
 
 console = Console()
 
@@ -267,6 +276,113 @@ def download_report():
         download_name=report_filename,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+
+@app.route('/analyze', methods=['POST'])
+def analyze_from_paths():
+    """
+    메일 첨부파일 로컬 경로로 직접 정책 검증 (mail-check 확장 연동용)
+
+    요청 JSON:
+    {
+        "vendor": "Paloalto" | "SECUI",
+        "running_path": "/path/to/running.xlsx",
+        "candidate_path": "/path/to/candidate.xlsx",
+        "target_paths": ["/path/to/target.xlsx"],
+        "running_sheet": "시트명",    // SECUI만 필요
+        "candidate_sheet": "시트명"   // SECUI만 필요
+    }
+
+    응답 JSON:
+    {
+        "success": true,
+        "summary": { ... },
+        "replyText": "회신 초안 텍스트",
+        "records": [ ... ]
+    }
+    """
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'error': '요청 본문이 없습니다.'}), 400
+
+        vendor = data.get('vendor', 'Paloalto')
+        running_path = data.get('running_path')
+        candidate_path = data.get('candidate_path')
+        target_paths = data.get('target_paths', [])
+
+        if not running_path or not candidate_path:
+            return jsonify({'error': 'running_path와 candidate_path는 필수입니다.'}), 400
+
+        for p in [running_path, candidate_path] + target_paths:
+            if not Path(p).exists():
+                return jsonify({'error': f'파일을 찾을 수 없습니다: {p}'}), 400
+
+        # 정책 파일 파싱
+        if vendor == 'SECUI':
+            running_sheet = data.get('running_sheet')
+            candidate_sheet = data.get('candidate_sheet')
+            if not running_sheet or not candidate_sheet:
+                return jsonify({'error': 'SECUI 벤더는 running_sheet와 candidate_sheet가 필요합니다.'}), 400
+            running_df = SECUIParser.parse_policy_file(running_path, running_sheet)
+            candidate_df = SECUIParser.parse_policy_file(candidate_path, candidate_sheet)
+        else:
+            running_df = PaloaltoParser.parse_policy_file(running_path)
+            candidate_df = PaloaltoParser.parse_policy_file(candidate_path)
+
+        # 대상 정책 파싱
+        target_policies = []
+        for path in target_paths:
+            try:
+                policies = parse_target_file(path)
+                target_policies.extend(policies)
+            except Exception as e:
+                console.print(f"[yellow]경고: {path} 파싱 실패 - {e}[/yellow]")
+        target_policies = list(dict.fromkeys(target_policies))
+
+        if not target_policies:
+            return jsonify({'error': '대상 정책 파일에서 정책을 찾지 못했습니다.'}), 400
+
+        # 검증
+        results_df = validate_policy_changes(running_df, candidate_df, target_policies)
+        summary = get_summary_dict(results_df)
+        reply_text = _build_reply_text(summary)
+
+        return jsonify({
+            'success': True,
+            'summary': summary,
+            'replyText': reply_text,
+            'records': results_df.to_dict('records')
+        })
+
+    except Exception as e:
+        console.print(f"[red]/analyze 오류: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'처리 중 오류가 발생했습니다: {str(e)}'}), 500
+
+
+def _build_reply_text(summary: dict) -> str:
+    """검증 결과 요약을 회신 초안 텍스트로 변환"""
+    lines = ['방화벽 정책 검증 결과를 안내드립니다.', '']
+
+    lines.append('[대상 정책 검증]')
+    lines.append(f"- 삭제 완료: {summary['deleted']}건")
+    lines.append(f"- 비활성화 완료: {summary['disabled']}건")
+    if summary['not_disabled'] > 0:
+        lines.append(f"- 미처리 (비활성화 안됨): {summary['not_disabled']}건 ⚠")
+    lines.append('')
+
+    if summary['unexpected_deleted'] > 0 or summary['unexpected_disabled'] > 0:
+        lines.append('[대상 외 변경 감지]')
+        if summary['unexpected_deleted'] > 0:
+            lines.append(f"- 대상 외 삭제: {summary['unexpected_deleted']}건 ⚠")
+        if summary['unexpected_disabled'] > 0:
+            lines.append(f"- 대상 외 비활성화: {summary['unexpected_disabled']}건 ⚠")
+        lines.append('')
+
+    lines.append(f"전체 대상 정책: {summary['target_total']}건 검증 완료")
+    return '\n'.join(lines)
 
 
 @app.route('/results')
