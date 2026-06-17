@@ -50,7 +50,7 @@ def parse_policy_file(file_path: str) -> pd.DataFrame:
                     cell_value = ws.range((row_idx, col_idx)).value
                     if cell_value:
                         cell_str = str(cell_value).strip().lower()
-                        if cell_str == 'rulename' and rulename_col_idx is None:
+                        if cell_str in ['rulename', '정책명'] and rulename_col_idx is None:
                             rulename_col_idx = col_idx
                         elif cell_str == 'enable' and enable_col_idx is None:
                             enable_col_idx = col_idx
@@ -178,7 +178,7 @@ def parse_target_file(file_path: str) -> List[str]:
                     if cell_value:
                         cell_str = str(cell_value).strip().lower()
                         # 정책 이름 컬럼 찾기
-                        if rulename_col_idx is None and cell_str in ['rule name', 'rulename', 'policy name']:
+                        if rulename_col_idx is None and cell_str in ['rule name', 'rulename', 'policy name', '정책명']:
                             rulename_col_idx = col_idx
                         # 작업구분 컬럼 찾기 (한글/영문 모두 지원)
                         if task_type_col_idx is None and cell_str in ['작업구분', 'task type', 'tasktype', 'task']:
@@ -194,7 +194,7 @@ def parse_target_file(file_path: str) -> List[str]:
             
             if header_row_idx is None or rulename_col_idx is None:
                 wb.close()
-                raise ValueError(f"'{file_path}'에서 정책 이름 컬럼('Rule Name', 'Rulename', 또는 'Policy Name')을 찾을 수 없습니다.")
+                raise ValueError(f"'{file_path}'에서 정책 이름 컬럼('Rule Name', 'Rulename', 'Policy Name', 또는 '정책명')을 찾을 수 없습니다.")
             
             # 헤더 행 이후부터 마지막 행까지 데이터 읽기
             data_start_row = header_row_idx + 1
