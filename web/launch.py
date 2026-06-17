@@ -28,7 +28,8 @@ def _log_error():
 def main():
     try:
         from app import app
-        app.run(host='127.0.0.1', port=5000, debug=False)
+        from waitress import serve
+        serve(app, host='127.0.0.1', port=5000, threads=4)
     except Exception:
         _log_error()
         sys.exit(1)
