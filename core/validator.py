@@ -68,25 +68,27 @@ def validate_policy_changes(
         pd.DataFrame: 검증 결과 리포트
                      컬럼: ['Policy', 'Status', 'Running_Enable', 'Candidate_Enable', 'Message', 'IsTarget']
     """
-    # 성능 최적화: 딕셔너리로 변환하여 O(1) 조회. 정책명은 normalize로 통일 (12.0 vs "12" 비교 가능)
-    running_dict = {}
-    for _, row in running_df.iterrows():
-        policy_name = normalize_policy_name(row['Rulename'])
-        if policy_name:
-            running_dict[policy_name] = normalize_enable(row['Enable'])
-    
-    candidate_dict = {}
-    for _, row in candidate_df.iterrows():
-        policy_name = normalize_policy_name(row['Rulename'])
-        if policy_name:
-            candidate_dict[policy_name] = normalize_enable(row['Enable'])
-    
+    # 딕셔너리로 변환하여 O(1) 조회. 정책명은 normalize로 통일 (12.0 vs "12" 비교 가능)
+    running_names = running_df['Rulename'].apply(normalize_policy_name)
+    running_dict = {
+        name: normalize_enable(enable)
+        for name, enable in zip(running_names, running_df['Enable'])
+        if name
+    }
+
+    candidate_names = candidate_df['Rulename'].apply(normalize_policy_name)
+    candidate_dict = {
+        name: normalize_enable(enable)
+        for name, enable in zip(candidate_names, candidate_df['Enable'])
+        if name
+    }
+
     results = []
-    target_set = set(normalize_policy_name(p) for p in target_policies if normalize_policy_name(p))
-    
+    normalized_targets = [normalize_policy_name(p) for p in target_policies]
+    target_set = {p for p in normalized_targets if p}
+
     # 1. 대상 정책 검증
-    for policy_name in target_policies:
-        policy_name = normalize_policy_name(policy_name)
+    for policy_name in normalized_targets:
         if not policy_name:
             continue
         
@@ -152,7 +154,7 @@ def validate_policy_changes(
         })
     
     # 3. 대상 외에 비활성화된 정책 찾기 (Y → N)
-    common_policies = running_policies_set & candidate_policies_set - target_set
+    common_policies = (running_policies_set & candidate_policies_set) - target_set
     
     for policy_name in common_policies:
         running_enable = running_dict[policy_name]

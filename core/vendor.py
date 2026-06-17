@@ -36,22 +36,28 @@ class PaloaltoParser:
                 max_row = ws.used_range.last_cell.row
                 max_col = ws.used_range.last_cell.column
                 
-                # 헤더 행 찾기
+                # 헤더 행 찾기 (배치 읽기: 1회 COM 호출)
                 header_row_idx = None
                 rulename_col_idx = None
                 enable_col_idx = None
-                
+
                 search_rows = min(50, max_row)
-                for row_idx in range(1, search_rows + 1):
-                    for col_idx in range(1, min(max_col + 1, 200)):
-                        cell_value = ws.range((row_idx, col_idx)).value
+                search_cols = min(max_col, 200)
+                header_block = ws.range((1, 1), (search_rows, search_cols)).value
+                if header_block is None:
+                    header_block = []
+                elif not isinstance(header_block[0], list):
+                    header_block = [header_block]
+
+                for row_idx, row in enumerate(header_block, 1):
+                    for col_idx, cell_value in enumerate(row, 1):
                         if cell_value:
                             cell_str = str(cell_value).strip().lower()
                             if cell_str == 'rulename' and rulename_col_idx is None:
                                 rulename_col_idx = col_idx
                             elif cell_str == 'enable' and enable_col_idx is None:
                                 enable_col_idx = col_idx
-                    
+
                     if rulename_col_idx is not None and enable_col_idx is not None:
                         header_row_idx = row_idx
                         break

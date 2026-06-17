@@ -38,24 +38,28 @@ def parse_policy_file(file_path: str) -> pd.DataFrame:
             max_row = ws.used_range.last_cell.row
             max_col = ws.used_range.last_cell.column
             
-            # 헤더 행 찾기: 'Rulename'과 'Enable' 컬럼이 있는 행 찾기
-            # 첫 50행에서 헤더 찾기 (충분한 범위)
+            # 헤더 행 찾기 (배치 읽기: 1회 COM 호출)
             header_row_idx = None
             rulename_col_idx = None
             enable_col_idx = None
-            
+
             search_rows = min(50, max_row)
-            for row_idx in range(1, search_rows + 1):
-                for col_idx in range(1, min(max_col + 1, 200)):  # 최대 200열까지 검색
-                    cell_value = ws.range((row_idx, col_idx)).value
+            search_cols = min(max_col, 200)
+            header_block = ws.range((1, 1), (search_rows, search_cols)).value
+            if header_block is None:
+                header_block = []
+            elif not isinstance(header_block[0], list):
+                header_block = [header_block]
+
+            for row_idx, row in enumerate(header_block, 1):
+                for col_idx, cell_value in enumerate(row, 1):
                     if cell_value:
                         cell_str = str(cell_value).strip().lower()
                         if cell_str in ['rulename', '정책명'] and rulename_col_idx is None:
                             rulename_col_idx = col_idx
                         elif cell_str == 'enable' and enable_col_idx is None:
                             enable_col_idx = col_idx
-                
-                # 두 컬럼을 모두 찾으면 헤더 행으로 설정
+
                 if rulename_col_idx is not None and enable_col_idx is not None:
                     header_row_idx = row_idx
                     break
@@ -172,22 +176,24 @@ def parse_target_file(file_path: str) -> List[str]:
             exclusion_reason_col_idx = None
             
             search_rows = min(50, max_row)
-            for row_idx in range(1, search_rows + 1):
-                for col_idx in range(1, min(max_col + 1, 200)):
-                    cell_value = ws.range((row_idx, col_idx)).value
+            search_cols = min(max_col, 200)
+            header_block = ws.range((1, 1), (search_rows, search_cols)).value
+            if header_block is None:
+                header_block = []
+            elif not isinstance(header_block[0], list):
+                header_block = [header_block]
+
+            for row_idx, row in enumerate(header_block, 1):
+                for col_idx, cell_value in enumerate(row, 1):
                     if cell_value:
                         cell_str = str(cell_value).strip().lower()
-                        # 정책 이름 컬럼 찾기
                         if rulename_col_idx is None and cell_str in ['rule name', 'rulename', 'policy name', '정책명']:
                             rulename_col_idx = col_idx
-                        # 작업구분 컬럼 찾기 (한글/영문 모두 지원)
                         if task_type_col_idx is None and cell_str in ['작업구분', 'task type', 'tasktype', 'task']:
                             task_type_col_idx = col_idx
-                        # 제외사유 컬럼 찾기 (한글/영문 모두 지원)
                         if exclusion_reason_col_idx is None and cell_str in ['제외사유', 'exclusion reason', 'exclusionreason', 'reason', 'exclusion']:
                             exclusion_reason_col_idx = col_idx
-                
-                # 정책 이름 컬럼을 찾으면 헤더 행으로 설정
+
                 if rulename_col_idx is not None:
                     header_row_idx = row_idx
                     break
