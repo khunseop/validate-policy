@@ -232,15 +232,16 @@ def upload_files():
         
         # 결과 요약 생성
         summary = get_summary_dict(validation_results)
-        
-        # 세션에는 파일명·요약만 저장 (쿠키 4KB 제한 방지, 대용량 results 제외)
+
+        # 세션에는 파일명·요약만 저장 (records는 응답에 직접 포함, 쿠키 4KB 제한 방지)
         session['report_filename'] = report_filename
         session['summary'] = summary
-        
+
         return jsonify({
             'success': True,
             'summary': summary,
-            'report_filename': report_filename
+            'report_filename': report_filename,
+            'records': validation_results.to_dict('records')
         })
         
     except Exception as e:

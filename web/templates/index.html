@@ -136,7 +136,7 @@
                                 대상: 삭제 {{ summary_only.deleted }}, 비활성화 {{ summary_only.disabled }}{% if summary_only.not_disabled > 0 %}, 비활성화 안됨 {{ summary_only.not_disabled }}{% endif %}
                                 · 대상 외: 삭제 {{ summary_only.unexpected_deleted }}, 비활성화 {{ summary_only.unexpected_disabled }}
                             </div>
-                            <a href="/download" class="btn btn-sm btn-outline-primary">리포트 다운로드 ({{ report_filename }})</a>
+                            <button class="btn btn-sm btn-outline-primary" onclick="downloadReport('{{ report_filename }}')">엑셀 리포트 다운로드</button>
                         {% elif error %}<p class="text-warning mb-0">{{ error }}</p>{% endif %}</div>
                     </div>
                 </div>
@@ -380,20 +380,96 @@
             }
         });
 
+        const STATUS_CONFIG = {
+            'DELETED':              { text: '삭제됨 ✓',         cls: 'bg-success' },
+            'DISABLED':             { text: '비활성화됨 ✓',     cls: 'bg-success' },
+            'UNEXPECTED_DELETED':   { text: '대상 외 삭제 ⚠',   cls: 'bg-danger' },
+            'UNEXPECTED_DISABLED':  { text: '대상 외 비활성화 ⚠', cls: 'bg-danger' },
+            'NOT_DISABLED':         { text: '비활성화 안됨 ⚠',  cls: 'bg-warning text-dark' },
+            'RE_ENABLED':           { text: '재활성화됨 ⚠',     cls: 'bg-warning text-dark' },
+            'NOT_IN_RUNNING':       { text: 'Running에 없음',   cls: 'bg-secondary' },
+            'NO_CHANGE':            { text: '변경 없음',         cls: 'bg-secondary' },
+            'CHANGED':              { text: '상태 변경',         cls: 'bg-info text-dark' },
+        };
+
+        function buildTable(records) {
+            if (!records || records.length === 0) return '';
+            const rows = records.map(r => {
+                const cfg = STATUS_CONFIG[r.Status] || { text: r.Status, cls: 'bg-secondary' };
+                return `<tr>
+                    <td class="text-break" style="max-width:260px">${escHtml(r.Policy)}</td>
+                    <td><span class="badge ${cfg.cls}">${cfg.text}</span></td>
+                    <td>${escHtml(r.Running_Enable)}</td>
+                    <td>${escHtml(r.Candidate_Enable)}</td>
+                    <td class="text-muted small">${escHtml(r.Message)}</td>
+                </tr>`;
+            }).join('');
+            return `<table class="table table-sm table-bordered table-hover mb-0" style="font-size:0.82rem">
+                <thead class="table-light sticky-top">
+                    <tr><th>정책명</th><th>상태</th><th>Running</th><th>Candidate</th><th>메시지</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+        }
+
+        function escHtml(s) {
+            return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
         function showResults(data) {
             const resultArea = document.getElementById('resultArea');
             const summary = data.summary;
             const nd = summary.not_disabled > 0 ? `, 비활성화 안됨 ${summary.not_disabled}` : '';
-            let html = `
-                <p class="text-success mb-2">검증 완료 · 총 ${summary.total}개 정책</p>
-                <div class="small text-muted mb-2">
-                    대상: 삭제 ${summary.deleted}, 비활성화 ${summary.disabled}${nd}
-                    · 대상 외: 삭제 ${summary.unexpected_deleted}, 비활성화 ${summary.unexpected_disabled}
+
+            const targetRecords = (data.records || []).filter(r => r.IsTarget);
+            const unexpectedRecords = (data.records || []).filter(r => !r.IsTarget);
+
+            let tablesHtml = '';
+            if (targetRecords.length > 0) {
+                tablesHtml += `<div class="mb-1 fw-semibold small">대상 정책 (${targetRecords.length}건)</div>
+                    <div style="max-height:320px;overflow-y:auto;border:1px solid #dee2e6;border-radius:4px" class="mb-3">
+                        ${buildTable(targetRecords)}
+                    </div>`;
+            }
+            if (unexpectedRecords.length > 0) {
+                tablesHtml += `<div class="mb-1 fw-semibold small text-danger">대상 외 변경사항 (${unexpectedRecords.length}건)</div>
+                    <div style="max-height:200px;overflow-y:auto;border:1px solid #dee2e6;border-radius:4px" class="mb-3">
+                        ${buildTable(unexpectedRecords)}
+                    </div>`;
+            }
+
+            resultArea.innerHTML = `
+                <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
+                    <span class="text-success fw-semibold">검증 완료 · 총 ${summary.total}개 정책</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="downloadReport('${escHtml(data.report_filename)}')">엑셀 리포트 다운로드</button>
                 </div>
-                <a href="/download" class="btn btn-sm btn-outline-primary">리포트 다운로드 (${data.report_filename})</a>
+                <div class="small text-muted mb-3">
+                    대상: 삭제 ${summary.deleted}, 비활성화 ${summary.disabled}${nd}
+                    &nbsp;·&nbsp; 대상 외: 삭제 ${summary.unexpected_deleted}, 비활성화 ${summary.unexpected_disabled}
+                </div>
+                ${tablesHtml}
             `;
-            
-            resultArea.innerHTML = html;
+        }
+
+        async function downloadReport(filename) {
+            try {
+                const response = await fetch('/download');
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${response.status}`);
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                showError('다운로드 오류: ' + err.message);
+            }
         }
 
         function showError(message) {
