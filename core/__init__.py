@@ -6,6 +6,7 @@ from .parser import parse_policy_file, parse_target_file
 from .validator import validate_policy_changes, normalize_enable
 from .utils import show_summary, get_summary_dict
 from .vendor import PaloaltoParser, SECUIParser
+from .attachment_classifier import classify_attachments, ClassificationError
 
 __all__ = [
     'parse_policy_file',
@@ -15,5 +16,7 @@ __all__ = [
     'show_summary',
     'get_summary_dict',
     'PaloaltoParser',
-    'SECUIParser'
+    'SECUIParser',
+    'classify_attachments',
+    'ClassificationError',
 ]

@@ -28,7 +28,7 @@ from flask import Flask, render_template, request, send_file, jsonify, session, 
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import pandas as pd
-from core import parse_policy_file, parse_target_file, validate_policy_changes
+from core import parse_policy_file, parse_target_file, validate_policy_changes, classify_attachments, ClassificationError
 from core.utils import get_summary_dict
 from core.vendor import PaloaltoParser, SECUIParser
 from rich.console import Console
@@ -281,16 +281,15 @@ def download_report():
 @app.route('/analyze', methods=['POST'])
 def analyze_from_paths():
     """
-    메일 첨부파일 로컬 경로로 직접 정책 검증 (mail-check 확장 연동용)
+    mail-check 확장 연동용. 메일 첨부파일명 목록만으로 벤더·파일 역할을
+    파일명 키워드로 자동 판별한 뒤 정책을 검증한다. (backend/API.md 계약)
 
-    요청 JSON:
+    요청 JSON (mail-check가 실제 보내는 형태):
     {
-        "vendor": "Paloalto" | "SECUI",
-        "running_path": "/path/to/running.xlsx",
-        "candidate_path": "/path/to/candidate.xlsx",
-        "target_paths": ["/path/to/target.xlsx"],
-        "running_sheet": "시트명",    // SECUI만 필요
-        "candidate_sheet": "시트명"   // SECUI만 필요
+        "subject": "메일 제목",
+        "body": "메일 본문",
+        "attachments": ["running-config_x.xlsx", "candidate-config_x.xlsx", "target.xlsx"],
+        "downloadFolder": "mail-check"
     }
 
     응답 JSON:
@@ -306,42 +305,44 @@ def analyze_from_paths():
         if not data:
             return jsonify({'error': '요청 본문이 없습니다.'}), 400
 
-        vendor = data.get('vendor', 'Paloalto')
-        running_path = data.get('running_path')
-        candidate_path = data.get('candidate_path')
-        target_paths = data.get('target_paths', [])
+        attachments = data.get('attachments', [])
+        download_folder = data.get('downloadFolder', '')
 
-        if not running_path or not candidate_path:
-            return jsonify({'error': 'running_path와 candidate_path는 필수입니다.'}), 400
+        try:
+            classified = classify_attachments(attachments, download_folder)
+        except ClassificationError as e:
+            console.print(f"[yellow]/analyze 파일 판별 실패 ({e.stage}): {e}[/yellow]")
+            return jsonify({'error': str(e), 'stage': e.stage}), 400
+
+        vendor = classified['vendor']
+        running_path = classified['running_path']
+        candidate_path = classified['candidate_path']
+        target_paths = classified['target_paths']
 
         for p in [running_path, candidate_path] + target_paths:
-            if not Path(p).exists():
-                return jsonify({'error': f'파일을 찾을 수 없습니다: {p}'}), 400
+            if not p.exists():
+                return jsonify({'error': f'파일을 찾을 수 없습니다: {p}', 'stage': 'file_not_found'}), 400
 
         # 정책 파일 파싱
         if vendor == 'SECUI':
-            running_sheet = data.get('running_sheet')
-            candidate_sheet = data.get('candidate_sheet')
-            if not running_sheet or not candidate_sheet:
-                return jsonify({'error': 'SECUI 벤더는 running_sheet와 candidate_sheet가 필요합니다.'}), 400
-            running_df = SECUIParser.parse_policy_file(running_path, running_sheet)
-            candidate_df = SECUIParser.parse_policy_file(candidate_path, candidate_sheet)
+            running_df = SECUIParser.parse_policy_file(str(running_path), classified['running_sheet'])
+            candidate_df = SECUIParser.parse_policy_file(str(candidate_path), classified['candidate_sheet'])
         else:
-            running_df = PaloaltoParser.parse_policy_file(running_path)
-            candidate_df = PaloaltoParser.parse_policy_file(candidate_path)
+            running_df = PaloaltoParser.parse_policy_file(str(running_path))
+            candidate_df = PaloaltoParser.parse_policy_file(str(candidate_path))
 
         # 대상 정책 파싱
         target_policies = []
         for path in target_paths:
             try:
-                policies = parse_target_file(path)
+                policies = parse_target_file(str(path))
                 target_policies.extend(policies)
             except Exception as e:
                 console.print(f"[yellow]경고: {path} 파싱 실패 - {e}[/yellow]")
         target_policies = list(dict.fromkeys(target_policies))
 
         if not target_policies:
-            return jsonify({'error': '대상 정책 파일에서 정책을 찾지 못했습니다.'}), 400
+            return jsonify({'error': '대상 정책 파일에서 정책을 찾지 못했습니다.', 'stage': 'target_detection'}), 400
 
         # 검증
         results_df = validate_policy_changes(running_df, candidate_df, target_policies)
